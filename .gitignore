@@ -1,0 +1,6 @@
+.mdc
+sim/*
+.*.swp
+*.so
+*.o
+.*.swo

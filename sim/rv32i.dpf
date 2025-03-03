@@ -1,0 +1,23 @@
+---
+## Note: The contents of this file are automatically generated.
+# Any changes made by hand may be overwritten.
+version: '0.2'
+work_dir: .
+design_root_dir: ..
+simulations:
+  - name: Sim 1 - single test
+    options: >-
+      -top work.rv32i_tb -L dut +acc+b -waves waves.mxd
+      +test="rv32ui-p-sw.hex"
+  - name: Sim 2 - all tests
+    options: '-top work.rv32i_tb -L dut +acc+b -waves waves.mxd'
+source_files:
+  - language: verilog
+    path: filelist.txt
+    library_name: dut
+    options: '-sv'
+    file_list: relative-to-file
+  - language: verilog
+    path: ../testbench/rv32i_tb.sv
+library_search_paths:
+  - $STD_LIBS\ieee93

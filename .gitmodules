@@ -1,0 +1,3 @@
+[submodule "TestRIG"]
+	path = TestRIG
+	url = git@github.com:CTSRD-CHERI/TestRIG.git
