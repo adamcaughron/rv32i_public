@@ -7,13 +7,20 @@ module zicsr (
     input [31:0] write_data,
     input [11:0] csr,
 
+    input [31:0] pc,
+
     input is_csrrw,
     input is_csrrs,
     input is_csrrc,
     input is_csrrwi,
     input is_csrrsi,
-    input is_csrrci
+    input is_csrrci,
+
+    input is_ebreak,
+    input is_mret
 );
+
+  reg [1:0] priv_mode;
 
   // Machine Information Registers
   reg [31:0] mvendorid;
@@ -76,11 +83,30 @@ module zicsr (
   reg [31:0] minstreth;
   reg [31:0] mnpmcounterh[3:31];
 
+  // Supervisor trap setup
+  reg [31:0] sstatus;
+  reg [31:0] stvec;
+
+  // Supervisor trap handling
+  reg [31:0] sscratch;
+  reg [31:0] sepc;
+  reg [31:0] scause;
+
+
   // etc...
 
   // Read mux
   always_comb begin
     case (csr)
+      // Supervisor trap setup
+      12'h100: read_data = sstatus;
+      12'h105: read_data = stvec;
+
+      // Supervisor trap handling
+      12'h140: read_data = sscratch;
+      12'h141: read_data = sepc;
+      12'h142: read_data = scause;
+
       // Machine information registers
       12'hf11: read_data = mvendorid;
       12'hf12: read_data = marchid;
@@ -119,9 +145,12 @@ module zicsr (
   end
 
   // Write logic
+  wire wr_en;
   wire [31:0] wr_val;
 
   // FIXME / TODO - this is not correct vis-a-vis rs1/rd=x0
+  assign wr_en = is_csrrw || is_csrrwi || is_csrrs || is_csrrsi || is_csrrc || is_csrrci;
+
   assign wr_val = (is_csrrw || is_csrrwi) ? write_data :
                 (is_csrrs || is_csrrsi) ? read_data | write_data :
                 (is_csrrc || is_csrrci) ? read_data & ~write_data : 32'bx;
@@ -148,8 +177,8 @@ module zicsr (
 
       // Machine trap handling
       mscratch <= 32'b0;
-      mepc <= 32'b0;
-      mcause <= 32'b0;
+      // mepc <= 32'b0;
+      // mcause <= 32'b0;
       mtval <= 32'b0;
       mip <= 32'b0;
       mtinst <= 32'b0;
@@ -188,7 +217,11 @@ module zicsr (
       mcycleh <= 32'b0;
       minstreth <= 32'b0;
       //mnpmcounterh [3:31] <= 32'b0;
-    end else begin
+
+      // Supervisor trap setup
+      sstatus <= 32'b0;
+      stvec <= 32'b0;
+    end else if (wr_en) begin
       // Machine trap status
       if (csr == 12'h300) mstatus <= wr_val;
       else if (csr == 12'h301) misa <= wr_val;
@@ -197,13 +230,15 @@ module zicsr (
       else if (csr == 12'h304) mie <= wr_val;
       else if (csr == 12'h305) mtvec <= wr_val;
       else if (csr == 12'h306) mcouteren <= wr_val;
-      else if (csr == 12'h310) mstatus <= wr_val;
-      else if (csr == 12'h312) medeleg <= wr_val;
+      else if (csr == 12'h310) mstatush <= wr_val;
+      else if (csr == 12'h312) medelegh <= wr_val;
 
       // Machine trap handling
       else if (csr == 12'h340) mscratch <= wr_val;
-      else if (csr == 12'h341) mepc <= wr_val;
-      else if (csr == 12'h342) mcause <= wr_val;
+      //else if (csr == 12'h341)
+      //    mepc <= wr_val;
+      //else if (csr == 12'h342)
+      //    mcause <= wr_val;
       else if (csr == 12'h343) mtval <= wr_val;
       else if (csr == 12'h344) mip <= wr_val;
       else if (csr == 12'h34a) mtinst <= wr_val;
@@ -214,10 +249,47 @@ module zicsr (
       else if (csr == 12'h31a) menvcfgh <= wr_val;
       else if (csr == 12'h747) mseccfg <= wr_val;
       else if (csr == 12'h757) mseccfgh <= wr_val;
+
+      // Supervisor trap setup
+      else if (csr == 12'h100) sstatus <= wr_val;
+      else if (csr == 12'h105) stvec <= wr_val;
+
+      // Supervisor trap handling
+      else if (csr == 12'h140) sscratch <= wr_val;
     end
   end
 
+  always @(posedge clk or negedge rst_n) begin
+    if (~rst_n) mcause <= 32'b0;
+    else begin
+      if (is_ebreak && priv_mode == 3'b11) mcause <= 3;
+    end
+  end
 
+  always @(posedge clk or negedge rst_n) begin
+    if (~rst_n) scause <= 32'b0;
+    else begin
+      if (is_ebreak && priv_mode == 3'b01) scause <= 3;
+    end
+  end
+
+  always @(posedge clk or negedge rst_n) begin
+    if (~rst_n) mepc <= 32'b0;
+    else if (wr_en && csr == 12'h341) mepc <= wr_val;
+    else if (is_ebreak && priv_mode == 3'b11) mepc <= pc;
+  end
+
+  always @(posedge clk or negedge rst_n) begin
+    if (~rst_n) sepc <= 32'b0;
+    else if (wr_en && csr == 12'h141) sepc <= wr_val;
+    else if (is_ebreak && priv_mode == 3'b01) sepc <= pc;
+  end
+
+  always @(posedge clk or negedge rst_n) begin
+    if (~rst_n) begin
+      priv_mode <= 2'b11;
+    end else if (is_mret) priv_mode <= mstatus[12:11];
+  end
   // Read logic
 
 

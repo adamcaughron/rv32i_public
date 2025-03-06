@@ -75,6 +75,7 @@ module instr_decode (
     // SYSTEM
     output is_ecall,
     output is_ebreak,
+    output is_mret,
 
     // CSR
     output is_csrrw,
@@ -212,6 +213,7 @@ module instr_decode (
   // SYSTEM
   assign is_ecall = is_system && funct3 == 3'b000 && rd == 5'b00000 && rs1 == 5'b00000 && instr[31:20] == 12'b000000000000;
   assign is_ebreak = is_system && funct3 == 3'b000 && rd == 5'b00000 && rs1 == 5'b00000 && instr[31:20] == 12'b000000000001;
+  assign is_mret = is_system && funct3 == 3'b000 && rd == 5'b00000 && rs1 == 5'b00000 && rs2 == 5'b00010 && funct7 == 7'b0011000;
 
   // CSR
   assign is_csrrw = is_system && funct3 == 3'b001;

@@ -85,6 +85,7 @@ wire is_pause;
     // SYSTEM
 wire is_ecall;
 wire is_ebreak;
+wire is_mret;
 
    // CSR
 wire is_csrrw;
@@ -107,12 +108,14 @@ assign nxt_pc = {dec_err ? {32{1'b0}} :
         (alu_output && (is_beq || is_bne ||
                 is_blt || is_bge ||
                 is_bltu || is_bgeu)
-        ) ? pc + $signed(imm) :
-        is_jal ? pc + $signed(imm) :
+        ) ? {{1'b0, pc} + $signed(imm)}[31:0] :
+        is_jal ? {{1'b0, pc} + $signed(imm)}[31:0] :
         // this would be later in pipelined operation:
-        is_jalr ? rs1_val + $signed(imm) :
-        (is_ecall || is_ebreak) ? pc : // ?
-        nxt_seq_pc } [30:0];
+        is_jalr ? {({1'b0, rs1_val} + $signed(imm))&~(32'b1)}[31:0] :
+        ((is_ecall || is_ebreak) && i_zicsr.priv_mode == 2'b11 ) ? {i_zicsr.mtvec[31:2], 2'b00} : // TODO/FIXME, impl MODE bits
+        ((is_ecall || is_ebreak) && i_zicsr.priv_mode == 2'b01 ) ? {i_zicsr.stvec[31:2], 2'b00} : // TODO/FIXME, impl MODE bits
+        is_mret ? i_zicsr.mepc:
+        nxt_seq_pc } [31:0];
 
 
 // INSTRUCTION FETCH
@@ -190,6 +193,7 @@ instr_decode i_instr_decode(
     // SYSTEM
     .is_ecall( is_ecall ),
     .is_ebreak( is_ebreak ),
+    .is_mret( is_mret ),
 
     // CSR
     .is_csrrw( is_csrrw ),
@@ -272,12 +276,16 @@ zicsr i_zicsr(
     .read_data( csr_read_data ),
     .write_data( csr_write_data ),
     .csr( imm[11:0] ),
+    .pc( pc ),
     .is_csrrw( is_csrrw ),
     .is_csrrs( is_csrrs ),
     .is_csrrc( is_csrrc ),
     .is_csrrwi( is_csrrwi ),
     .is_csrrsi( is_csrrsi ),
-    .is_csrrci( is_csrrci )
+    .is_csrrci( is_csrrci ),
+
+    .is_ebreak( is_ebreak ),
+    .is_mret( is_mret )
 );
 
 

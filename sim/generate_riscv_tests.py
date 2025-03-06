@@ -19,15 +19,18 @@ exclude_test_patterns = [
     "-fm",
     "-lrsc",
     "rv64",
-    "rv32mi",
-    "rv32si-p-csr",
-    "rv32si-p-sbreak",
+    "rv32mi-p-breakpoint",
+    "rv32mi-p-illegal",
+    "rv32mi-p-ma_fetch",
+    "rv32mi-p-mcsr",
+    "rv32mi-p-ma_addr",
+    "rv32mi-p-shamt",
     "rv32si-p-dirty",
     "rv32si-p-ma_fetch",
     "rv32si-p-wfi",
 ]
 
-include_test_patterns = ["rv32ui", "rv32si"]
+include_test_patterns = ["rv32ui", "rv32mi", "rv32si"]
 
 exclude_test_names = [
     test

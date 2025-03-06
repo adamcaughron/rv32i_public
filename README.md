@@ -8,6 +8,9 @@ It is intended as a starting point for experiments with CPU and testbench develo
 The core currently supports the following features:
 - RV32I base ISA, v2.1
 - Zicsr extension for CSR instructions, v2.0
+- Partial support for RISCV privileged architecture
+  - Machine ISA, v1.13, partial support
+  - Supervisor ISA, v1.13, partial support
 
 The testbench supports the following modes of operation:
 - Execution of elf files via conversion to backdoor-loadable initialization files
@@ -15,7 +18,8 @@ The testbench supports the following modes of operation:
 Verification status:
 - Many of the self-checking tests from the [sail-riscv](https://github.com/riscv/sail-riscv/tree/master/test/riscv-tests) repo are passing:
   - All 39 `"rv32ui-p-*"` tests are passing
-  - The following `"rv32si-p-*"` tests are passing: `rv32si-p-scall`
+  - The following `"rv32mi-p-*"` tests are passing: `rv32mi-p-csr, rv32mi-p-sbreak, rv32mi-p-scall`
+  - The following `"rv32si-p-*"` tests are passing: `rv32si-p-csr, rv32si-p-sbreak, rv32si-p-scall`
 
 Getting Started
 ---------------
