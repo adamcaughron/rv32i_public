@@ -14,6 +14,7 @@ reg [31:0] nxt_pc;
 reg [31:0] nxt_seq_pc;
 
 reg [31:0] ld_data;
+reg [31:0] csr_read_data;
 
 wire dec_err;
 wire [5:0] rd;
@@ -85,6 +86,13 @@ wire is_pause;
 wire is_ecall;
 wire is_ebreak;
 
+   // CSR
+wire is_csrrw;
+wire is_csrrs;
+wire is_csrrc;
+wire is_csrrwi;
+wire is_csrrsi;
+wire is_csrrci;
 
 always @(posedge clk)
     if (~rst_n)
@@ -181,7 +189,15 @@ instr_decode i_instr_decode(
 
     // SYSTEM
     .is_ecall( is_ecall ),
-    .is_ebreak( is_ebreak )
+    .is_ebreak( is_ebreak ),
+
+    // CSR
+    .is_csrrw( is_csrrw ),
+    .is_csrrs( is_csrrs ),
+    .is_csrrc( is_csrrc ),
+    .is_csrrwi( is_csrrwi ),
+    .is_csrrsi( is_csrrsi ),
+    .is_csrrci( is_csrrci )
 );
 
 
@@ -201,11 +217,11 @@ regfile i_regfile(
 
 // ALU
 alu i_alu(
-   .rd_val( alu_output ),
-   .rs1_val( is_auipc ? pc : rs1_val ),
-   .rs2_val( rs2_val ),
-   .imm ( imm ),
-   .*
+    .rd_val( alu_output ),
+    .rs1_val( is_auipc ? pc : rs1_val ),
+    .rs2_val( rs2_val ),
+    .imm ( imm ),
+    .*
 );
 
 // Load-Store "Unit"
@@ -246,9 +262,29 @@ always @(posedge clk) begin
     end
 end
 
+// CSRs:
+wire [31:0] csr_write_data;
+assign csr_write_data = (is_csrrw || is_csrrs || is_csrrc) ? rs1_val :
+                        (is_csrrwi || is_csrrsi || is_csrrci) ? instr[19:15] : 32'bx;
+zicsr i_zicsr(
+    .clk( clk ),
+    .rst_n( rst_n ),
+    .read_data( csr_read_data ),
+    .write_data( csr_write_data ),
+    .csr( imm[11:0] ),
+    .is_csrrw( is_csrrw ),
+    .is_csrrs( is_csrrs ),
+    .is_csrrc( is_csrrc ),
+    .is_csrrwi( is_csrrwi ),
+    .is_csrrsi( is_csrrsi ),
+    .is_csrrci( is_csrrci )
+);
+
 
 // Select write-back value (next PC; immediate value; or ALU output)
-assign rd_val = is_jal | is_jalr ? nxt_seq_pc : is_lui ? imm : (is_lb || is_lh || is_lw || is_lbu || is_lhu) ? ld_data : alu_output;
+assign rd_val = is_jal | is_jalr ? nxt_seq_pc : is_lui ? imm :
+                (is_lb || is_lh || is_lw || is_lbu || is_lhu) ? ld_data :
+                (is_csrrw || is_csrrwi || is_csrrs || is_csrrsi || is_csrrc || is_csrrci) ? csr_read_data : alu_output;
 
 
 endmodule

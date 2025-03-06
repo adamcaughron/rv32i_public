@@ -8,4 +8,5 @@
 ../design/regfile.sv
 ../design/instr_decode.sv
 ../design/alu.sv
+../design/zicsr.sv
 ../design/rv32i_core.sv

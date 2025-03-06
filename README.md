@@ -7,12 +7,15 @@ It is intended as a starting point for experiments with CPU and testbench develo
 
 The core currently supports the following features:
 - RV32I base ISA, v2.1
- 
+- Zicsr extension for CSR instructions, v2.0
+
 The testbench supports the following modes of operation:
-- Execution of ".dump" files via conversion to backdoor-loadable initialization files
+- Execution of elf files via conversion to backdoor-loadable initialization files
 
 Verification status:
-- 37 out of 39 of the self-checking tests from the [sail-riscv](https://github.com/riscv/sail-riscv/tree/master/test/riscv-tests) repo are passing:
+- Many of the self-checking tests from the [sail-riscv](https://github.com/riscv/sail-riscv/tree/master/test/riscv-tests) repo are passing:
+  - All 39 `"rv32ui-p-*"` tests are passing
+  - The following `"rv32si-p-*"` tests are passing: `rv32si-p-scall`
 
 Getting Started
 ---------------
@@ -48,11 +51,10 @@ $ ./compile_and_run.sh
 To run a specific test:
 ```sh
 $ ./compile_and_run.sh <test_name[.hex]>
-``` 
+```
 
 ### Testbench plusargs
 These are the SV plusargs supported by the testbench. These are useful if you edit `run.sh` or invoke `dsim` directly.
-|Plusarg              |Description                                                             |
-|---------------------|------------------------------------------------------------------------|
-|+test=\<test\_name\> | For running a single test. Specified with or without '.hex' extension  |
-|+all\_tests           | Run all tests listed in `all_riscv_tests.sv` at elaboration time       |
+|Plusarg              |Description                                                                                                                 |
+|---------------------|----------------------------------------------------------------------------------------------------------------------------|
+|+test=\<test\_name\> | For running a single test. Specified with or without '.hex' extension. Runs all tests from `all_riscv_tests.sv` otherwise. |

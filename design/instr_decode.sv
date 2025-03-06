@@ -74,8 +74,15 @@ module instr_decode (
 
     // SYSTEM
     output is_ecall,
-    output is_ebreak
+    output is_ebreak,
 
+    // CSR
+    output is_csrrw,
+    output is_csrrs,
+    output is_csrrc,
+    output is_csrrwi,
+    output is_csrrsi,
+    output is_csrrci
 );
 
   // OPERANDS
@@ -206,6 +213,14 @@ module instr_decode (
   assign is_ecall = is_system && funct3 == 3'b000 && rd == 5'b00000 && rs1 == 5'b00000 && instr[31:20] == 12'b000000000000;
   assign is_ebreak = is_system && funct3 == 3'b000 && rd == 5'b00000 && rs1 == 5'b00000 && instr[31:20] == 12'b000000000001;
 
+  // CSR
+  assign is_csrrw = is_system && funct3 == 3'b001;
+  assign is_csrrs = is_system && funct3 == 3'b010;
+  assign is_csrrc = is_system && funct3 == 3'b011;
+  assign is_csrrwi = is_system && funct3 == 3'b101;
+  assign is_csrrsi = is_system && funct3 == 3'b110;
+  assign is_csrrci = is_system && funct3 == 3'b111;
+
 
   // IMMEDIATE selection
 
@@ -224,7 +239,7 @@ module instr_decode (
 
   // JALR (I-type imm)
   // LOAD (I-type imm)
-  wire sel_i_type_imm = is_load || is_jalr || (~sel_modified_i_type_imm && is_op_imm);
+  wire sel_i_type_imm = is_load || is_jalr || (~sel_modified_i_type_imm && is_op_imm) || is_system;
 
   // STORE (S-type imm)
   wire sel_s_type_imm = is_store;
@@ -236,7 +251,8 @@ module instr_decode (
                sel_i_type_imm ? i_type_imm :
                sel_s_type_imm ? s_type_imm : {32{1'bx}};
 
-  assign wr_valid = is_lui || is_auipc || is_jal || is_jalr || is_load || is_op_imm || is_op || is_fence;
+  assign wr_valid = is_lui || is_auipc || is_jal || is_jalr || is_load || is_op_imm || is_op || is_fence ||
+                  is_csrrw || is_csrrwi || is_csrrs || is_csrrsi || is_csrrc || is_csrrci;
 
   assign dec_err = instr[1:0] != 2'b11;  // FIXME
 

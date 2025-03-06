@@ -20,10 +20,6 @@ module rv32i_tb ();
 
   task load_test(string test_mem_file);
       // Program memory initialization
-      // Generate register initialization instructions:
-      for (int j=1; j<32; j++) begin
-          i_rv32i_core.mem[(j-1)] = {{20{1'b0}}, j[4:0], 5'b00100, 2'b11};
-      end
       // Load memory image:
       // $display("Initializing memory from file %s", test_mem_file);
       $readmemh(test_mem_file, i_rv32i_core.mem);

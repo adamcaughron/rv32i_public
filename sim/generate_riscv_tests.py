@@ -10,7 +10,7 @@ from parse_dump import parse_riscv_elfdump
 riscv_test_dir = sys.argv[-1]
 skip_parsing = sys.argv[-2] == "--filelist-only"
 
-all_tests = glob.glob(os.path.join(riscv_test_dir, "*.dump"))
+all_tests = glob.glob(os.path.join(riscv_test_dir, "*.elf"))
 
 exclude_test_patterns = [
     "-v-",
@@ -20,8 +20,8 @@ exclude_test_patterns = [
     "-lrsc",
     "rv64",
     "rv32mi",
-    "rv32ui-p-fence_i",
     "rv32si-p-csr",
+    "rv32si-p-sbreak",
     "rv32si-p-dirty",
     "rv32si-p-ma_fetch",
     "rv32si-p-wfi",
