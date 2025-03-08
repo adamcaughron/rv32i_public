@@ -1,5 +1,7 @@
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
+import "DPI-C" task initialize_rvfi_dii(input int portnum);
+import "DPI-C" function void finalize_rvfi_dii();
 
 module rv32i_tb ();
 
@@ -11,12 +13,20 @@ module rv32i_tb ();
 
   reg clk = 0;
   reg rst_n = 0;
+  reg halt = 0;
+  reg unhalt = 0;
+  reg do_finish = 0;
+  reg rvfi_dii_enable = 0;
+
 
   // Instantiate the DUT
   rv32i_core i_rv32i_core(
     .clk(clk),
     .rst_n(rst_n)
+    //.halt(halt)
   );
+
+  bind i_rv32i_core rv32i_dii i_rv32i_dii(rv32i_tb.rvfi_dii_enable, rv32i_tb.halt);
 
   task load_test(string test_mem_file);
       // Program memory initialization
@@ -25,8 +35,31 @@ module rv32i_tb ();
       $readmemh(test_mem_file, i_rv32i_core.mem);
   endtask
 
+  task do_halt();
+     halt = 1;
+     rst_n = 0;
+  endtask
+
+  task do_unhalt();
+     foreach(i_rv32i_core.mem[i])
+         i_rv32i_core.mem[i] <= 0;
+     for(int i=1; i<32; i++)
+        i_rv32i_core.i_regfile.data[i] <= 0;
+     halt = 0;
+     reset_pulse();
+  endtask
+
+  function void do_queue_finish();
+      $display("In do_queue_finish, simulation to $finish on next clockedge");
+      do_finish = 1;
+  endfunction
+
+  export "DPI-C" task do_halt;
+  export "DPI-C" task do_unhalt;
+  export "DPI-C" function do_queue_finish;
+
   task reset_pulse();
-      // Reset pulse
+    // Reset pulse
     rst_n = 0;
       repeat(10)
          @(posedge clk);
@@ -60,17 +93,31 @@ module rv32i_tb ();
         automatic int len = test_name.len();
         if (!(test_name.substr(len-4, len-1) == ".hex"))
             test_name = {test_name, ".hex"};
+        rvfi_dii_enable = 0;
 
         $display("Running test %s (from \"test\" commandline arg)", test_name);
         run_test(test_name);
-    end else begin
+        $finish;
+    end else if ($test$plusargs("all_tests")) begin
+        rvfi_dii_enable = 0;
         $display("Running all tests...");
         for (int j=0; j<all_tests.size(); j++) begin
             $display("Test %d: %s", j, all_tests[j]);
             run_test(all_tests[j]);
         end
+        $finish;
+    end else if ($test$plusargs("dii")) begin
+        automatic int portnum = 0;
+
+        $value$plusargs("portnum=%d", portnum);
+
+        rvfi_dii_enable = 1;
+        halt = 1;
+        $display("Initializing RVFS-DII socket via DPI call from rv32i_tb...");
+        initialize_rvfi_dii(portnum);
+    end else begin
+        $display("-E- please specify one of: +test=<test>, +all_tests, +dii");
     end
-    $finish;
   end
 
   // Generate a clock forever
@@ -81,6 +128,16 @@ module rv32i_tb ();
           #5;
           clk = 0;
       end
+  end
+
+  always @(posedge clk) begin
+          if (do_finish)
+                  $finish;
+  end
+
+  final begin
+     if (rvfi_dii_enable)
+        finalize_rvfi_dii();
   end
 
 endmodule // rv32i_tb

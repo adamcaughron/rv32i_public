@@ -27,5 +27,7 @@ dlib map -lib ieee ${STD_LIBS}/ieee93 || true
 
 # Analyze separately, Elaborate and Run in one step.
 dvlcom -lib dut -sv -F filelist.txt
-dvlcom ../testbench/rv32i_tb.sv
+dvlcom ../testbench/rv32i_tb.sv ../testbench/rv32i_dii.sv
 
+# Build TB SO file:
+(cd ../testbench/dpi && make all)

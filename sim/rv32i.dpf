@@ -8,9 +8,16 @@ simulations:
   - name: Sim 1 - single test
     options: >-
       -top work.rv32i_tb -L dut +acc+b -waves waves.mxd
-      +test="rv32ui-p-sw.hex"
+      +test="rv32ui-p-sw.hex" -dpiheader rv32i_tb_exports.h -sv_lib
+      ../testbench/dpi/rv32i_tb.so
   - name: Sim 2 - all tests
-    options: '-top work.rv32i_tb -L dut +acc+b -waves waves.mxd'
+    options: >-
+      -top work.rv32i_tb -L dut +acc+b -waves waves.mxd +all_tests -sv_lib
+      ../testbench/dpi/rv32i_tb.so
+  - name: Sim 3 - RVFI-DII generated test
+    options: >-
+      -top work.rv32i_tb -L dut +acc+b -sv_lib
+      /home/acaughron/proj/rv32i/testbench/dpi/rv32i_tb.so
 source_files:
   - language: verilog
     path: filelist.txt
