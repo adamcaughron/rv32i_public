@@ -18,7 +18,7 @@ The testbench supports the following modes of operation:
 Verification status:
 - Many of the self-checking tests from the [sail-riscv](https://github.com/riscv/sail-riscv/tree/master/test/riscv-tests) repo are passing:
   - All 39 `"rv32ui-p-*"` tests are passing
-  - The following `"rv32mi-p-*"` tests are passing: `rv32mi-p-csr, rv32mi-p-sbreak, rv32mi-p-scall`
+  - The following `"rv32mi-p-*"` tests are passing: `rv32mi-p-csr, rv32mi-p-ma_addr, rv32mi-p-sbreak, rv32mi-p-scall, rv32mi-p-shamt`
   - The following `"rv32si-p-*"` tests are passing: `rv32si-p-csr, rv32si-p-sbreak, rv32si-p-scall`
 
 Getting Started

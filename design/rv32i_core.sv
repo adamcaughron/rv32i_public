@@ -3,7 +3,9 @@ module rv32i_core(
     input rst_n
 );
 
-reg [3:0][7:0] mem[0:32768];
+reg [3:0][7:0] mem[0:8388608];
+
+reg [31:0] instr;
 
 // ALU result
 wire [31:0] alu_output;
@@ -12,9 +14,11 @@ wire [31:0] rd_val;
 reg [31:0] pc;
 reg [31:0] nxt_pc;
 reg [31:0] nxt_seq_pc;
+reg [31:0] nxt_pc_w_trap;
 
 reg [31:0] ld_data;
 reg [31:0] csr_read_data;
+reg invalid_csr;
 
 wire dec_err;
 wire [5:0] rd;
@@ -86,6 +90,7 @@ wire is_pause;
 wire is_ecall;
 wire is_ebreak;
 wire is_mret;
+wire is_sret;
 
    // CSR
 wire is_csrrw;
@@ -95,31 +100,34 @@ wire is_csrrwi;
 wire is_csrrsi;
 wire is_csrrci;
 
+wire instr_trap;
+
 always @(posedge clk)
     if (~rst_n)
-        pc <= 32'b0;
+        pc <= 32'h8000_0000;
     else
-    pc <= nxt_pc;
+        pc <= nxt_pc_w_trap;
 
 // NEXT PC COMPUTATION
 assign nxt_seq_pc = pc + 3'b100;
-assign nxt_pc = {dec_err ? {32{1'b0}} :
+assign nxt_pc = {
         // this would be later in pipelined operation:
         (alu_output && (is_beq || is_bne ||
-                is_blt || is_bge ||
-                is_bltu || is_bgeu)
-        ) ? {{1'b0, pc} + $signed(imm)}[31:0] :
+                        is_blt || is_bge ||
+                        is_bltu || is_bgeu)) ? {{1'b0, pc} + $signed(imm)}[31:0] :
         is_jal ? {{1'b0, pc} + $signed(imm)}[31:0] :
         // this would be later in pipelined operation:
         is_jalr ? {({1'b0, rs1_val} + $signed(imm))&~(32'b1)}[31:0] :
-        ((is_ecall || is_ebreak) && i_zicsr.priv_mode == 2'b11 ) ? {i_zicsr.mtvec[31:2], 2'b00} : // TODO/FIXME, impl MODE bits
-        ((is_ecall || is_ebreak) && i_zicsr.priv_mode == 2'b01 ) ? {i_zicsr.stvec[31:2], 2'b00} : // TODO/FIXME, impl MODE bits
-        is_mret ? i_zicsr.mepc:
-        nxt_seq_pc } [31:0];
+        is_mret ? i_zicsr.mepc :
+        is_sret ? i_zicsr.sepc : nxt_seq_pc } [31:0];
+
+
+assign nxt_pc_w_trap = instr_trap ? (i_zicsr.priv_mode == 2'b11 ? {i_zicsr.mtvec[31:2], 2'b00} :
+                                                                  {i_zicsr.stvec[31:2], 2'b00} ) : nxt_pc;
 
 
 // INSTRUCTION FETCH
-wire [31:0] instr = mem[pc>>2];
+assign instr = mem[pc[30:0]>>2];
 
 
 // INSTRUCTION DECODE
@@ -194,6 +202,7 @@ instr_decode i_instr_decode(
     .is_ecall( is_ecall ),
     .is_ebreak( is_ebreak ),
     .is_mret( is_mret ),
+    .is_sret( is_sret ),
 
     // CSR
     .is_csrrw( is_csrrw ),
@@ -212,7 +221,7 @@ regfile i_regfile(
     .rd( rd ),
     .rs1( rs1),
     .rs2( rs2 ),
-    .wr_en( wr_valid ),
+    .wr_en( wr_valid && ~instr_trap),  // FIXME no logic in port connections
     .wr_data( rd_val ),
     .rd_rs1( rs1_val ),
     .rd_rs2( rs2_val )
@@ -254,7 +263,7 @@ end
 
 // Perform "store":
 always @(posedge clk) begin
-    if (rst_n) begin
+    if (rst_n && ~instr_trap) begin
         if (is_sb || is_sh || is_sw)
             mem[b0_index][b0_offset] <= rs2_val[7:0];
         if (is_sh || is_sw)
@@ -275,8 +284,11 @@ zicsr i_zicsr(
     .rst_n( rst_n ),
     .read_data( csr_read_data ),
     .write_data( csr_write_data ),
+    .invalid_csr( invalid_csr ),
     .csr( imm[11:0] ),
     .pc( pc ),
+    .instr( instr ),
+    .mem_addr( alu_output ),
     .is_csrrw( is_csrrw ),
     .is_csrrs( is_csrrs ),
     .is_csrrc( is_csrrc ),
@@ -285,7 +297,10 @@ zicsr i_zicsr(
     .is_csrrci( is_csrrci ),
 
     .is_ebreak( is_ebreak ),
-    .is_mret( is_mret )
+    .is_ecall( is_ecall ),
+    .is_mret( is_mret ),
+    .is_sret( is_sret ),
+    .*
 );
 
 
@@ -293,6 +308,42 @@ zicsr i_zicsr(
 assign rd_val = is_jal | is_jalr ? nxt_seq_pc : is_lui ? imm :
                 (is_lb || is_lh || is_lw || is_lbu || is_lhu) ? ld_data :
                 (is_csrrw || is_csrrwi || is_csrrs || is_csrrsi || is_csrrc || is_csrrci) ? csr_read_data : alu_output;
+
+// Traps
+
+
+wire addr_oob = (alu_output < $unsigned(32'h8000_0000)) || ($unsigned(alu_output) >= $unsigned(32'h8080_0000));
+
+// 0 - Instruction address misaligned - Exception is reported on the branch
+// or link instruction that targets an address which is not IALIGN-bit aligned
+// (32 bit here)
+wire trap_instr_addr_misaligned = (is_branch || is_jal || is_jalr) && (|nxt_pc[1:0]);
+
+// 1 - Instruction access fault -- would require implementing Physical Memory Protection CSRs
+
+// 2 - illegal instruction - many
+wire trap_illegal_instr = dec_err || invalid_csr || (i_zicsr.priv_mode != 2'b11 && is_mret) || (i_zicsr.priv_mode == 2'b00 && is_sret) ||
+                          ((is_csrrw || is_csrrwi || is_csrrs || is_csrrsi || is_csrrc || is_csrrci) && !(i_zicsr.priv_mode >= imm[9:8]));
+
+
+// 3 - breakpoint
+wire trap_breakpt = is_ebreak;
+
+// 4 - load address misaligned
+wire trap_ld_addr_misaligned = ((is_lh || is_lhu) && alu_output[0]) || (is_lw && (|alu_output[1:0]));
+
+// 5 - load access fault
+wire trap_ld_access_fault = i_instr_decode.is_load && addr_oob;
+
+
+// 6 - Store/AMO address misaligned
+wire trap_st_amo_addr_misaligned = (is_sh && alu_output[0]) || (is_sw && (|alu_output[1:0]));
+
+// 7 - Store/AMO access fault
+wire trap_st_amo_access_fault = (i_instr_decode.is_store || i_instr_decode.is_amo) && addr_oob;
+
+
+assign instr_trap = is_ebreak || is_ecall || trap_instr_addr_misaligned || trap_illegal_instr || trap_breakpt || trap_ld_addr_misaligned || trap_ld_access_fault || trap_st_amo_addr_misaligned || trap_st_amo_access_fault;
 
 
 endmodule

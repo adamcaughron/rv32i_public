@@ -23,8 +23,6 @@ exclude_test_patterns = [
     "rv32mi-p-illegal",
     "rv32mi-p-ma_fetch",
     "rv32mi-p-mcsr",
-    "rv32mi-p-ma_addr",
-    "rv32mi-p-shamt",
     "rv32si-p-dirty",
     "rv32si-p-ma_fetch",
     "rv32si-p-wfi",

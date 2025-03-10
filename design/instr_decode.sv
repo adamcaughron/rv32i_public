@@ -76,6 +76,7 @@ module instr_decode (
     output is_ecall,
     output is_ebreak,
     output is_mret,
+    output is_sret,
 
     // CSR
     output is_csrrw,
@@ -214,6 +215,7 @@ module instr_decode (
   assign is_ecall = is_system && funct3 == 3'b000 && rd == 5'b00000 && rs1 == 5'b00000 && instr[31:20] == 12'b000000000000;
   assign is_ebreak = is_system && funct3 == 3'b000 && rd == 5'b00000 && rs1 == 5'b00000 && instr[31:20] == 12'b000000000001;
   assign is_mret = is_system && funct3 == 3'b000 && rd == 5'b00000 && rs1 == 5'b00000 && rs2 == 5'b00010 && funct7 == 7'b0011000;
+  assign is_sret = is_system && funct3 == 3'b000 && rd == 5'b00000 && rs1 == 5'b00000 && rs2 == 5'b00010 && funct7 == 7'b0001000;
 
   // CSR
   assign is_csrrw = is_system && funct3 == 3'b001;
@@ -256,7 +258,57 @@ module instr_decode (
   assign wr_valid = is_lui || is_auipc || is_jal || is_jalr || is_load || is_op_imm || is_op || is_fence ||
                   is_csrrw || is_csrrwi || is_csrrs || is_csrrsi || is_csrrc || is_csrrci;
 
-  assign dec_err = instr[1:0] != 2'b11;  // FIXME
-
+  assign dec_err = instr[1:0] != 2'b11 || ~(
+    is_auipc ||
+    is_jal ||
+    is_jalr ||
+    is_branch ||
+    is_beq ||
+    is_bne ||
+    is_blt ||
+    is_bge ||
+    is_bltu ||
+    is_bgeu ||
+    is_lui ||
+    is_lb ||
+    is_lh ||
+    is_lw ||
+    is_lbu ||
+    is_lhu ||
+    is_sb ||
+    is_sh ||
+    is_sw ||
+    is_addi ||
+    is_slti ||
+    is_stliu ||
+    is_xori ||
+    is_ori ||
+    is_andi ||
+    is_slli ||
+    is_srli ||
+    is_srai ||
+    is_add ||
+    is_sub ||
+    is_sll ||
+    is_slt ||
+    is_sltu ||
+    is_xor ||
+    is_srl ||
+    is_sra ||
+    is_or ||
+    is_and ||
+    is_fence ||
+    is_fence_tso ||
+    is_pause ||
+    is_ecall ||
+    is_ebreak ||
+    is_mret ||
+    is_sret ||
+    is_csrrw ||
+    is_csrrs ||
+    is_csrrc ||
+    is_csrrwi ||
+    is_csrrsi ||
+    is_csrrci );
 
 endmodule  // instr_decode

@@ -3,11 +3,14 @@ module zicsr (
     input rst_n,
 
     output logic [31:0] read_data,
+    output logic invalid_csr,
 
     input [31:0] write_data,
     input [11:0] csr,
 
     input [31:0] pc,
+    input [31:0] instr,
+    input [31:0] mem_addr,
 
     input is_csrrw,
     input is_csrrs,
@@ -17,7 +20,17 @@ module zicsr (
     input is_csrrci,
 
     input is_ebreak,
-    input is_mret
+    input is_ecall,
+    input is_mret,
+    input is_sret,
+
+    input trap_instr_addr_misaligned,
+    input trap_illegal_instr,
+    input trap_breakpt,
+    input trap_ld_addr_misaligned,
+    input trap_ld_access_fault,
+    input trap_st_amo_addr_misaligned,
+    input trap_st_amo_access_fault
 );
 
   reg [1:0] priv_mode;
@@ -95,58 +108,81 @@ module zicsr (
 
   // etc...
 
+  wire wr_en;
+  wire rd_end;
+  wire [31:0] wr_val;
+
+  wire exception_occurred = is_ebreak ||
+                            is_ecall ||
+                            trap_instr_addr_misaligned ||
+                            trap_illegal_instr ||
+                            trap_breakpt ||
+                            trap_ld_addr_misaligned ||
+                            trap_ld_access_fault ||
+                            trap_st_amo_addr_misaligned ||
+                            trap_st_amo_access_fault ;
+
+  // FIXME / TODO - this is not correct vis-a-vis rs1/rd=x0
+  assign rd_en = is_csrrw || is_csrrwi || is_csrrs || is_csrrsi || is_csrrc || is_csrrci;
+
   // Read mux
   always_comb begin
-    case (csr)
-      // Supervisor trap setup
-      12'h100: read_data = sstatus;
-      12'h105: read_data = stvec;
+    if (~rd_en) begin
+      invalid_csr = 0;
+      read_data   = 32'b0;
+    end else begin
+      invalid_csr = 0;
+      case (csr)
+        // Supervisor trap setup
+        12'h100: read_data = sstatus;
+        12'h105: read_data = stvec;
 
-      // Supervisor trap handling
-      12'h140: read_data = sscratch;
-      12'h141: read_data = sepc;
-      12'h142: read_data = scause;
+        // Supervisor trap handling
+        12'h140: read_data = sscratch;
+        12'h141: read_data = sepc;
+        12'h142: read_data = scause;
 
-      // Machine information registers
-      12'hf11: read_data = mvendorid;
-      12'hf12: read_data = marchid;
-      12'hf13: read_data = mimpid;
-      12'hf14: read_data = mhartid;
-      12'hf15: read_data = mconfigptr;
+        // Machine information registers
+        12'hf11: read_data = mvendorid;
+        12'hf12: read_data = marchid;
+        12'hf13: read_data = mimpid;
+        12'hf14: read_data = mhartid;
+        12'hf15: read_data = mconfigptr;
 
-      // Machine trap status
-      12'h300: read_data = mstatus;
-      12'h301: read_data = misa;
-      12'h302: read_data = medeleg;
-      12'h303: read_data = mideleg;
-      12'h304: read_data = mie;
-      12'h305: read_data = mtvec;
-      12'h306: read_data = mcouteren;
-      12'h310: read_data = mstatush;
-      12'h312: read_data = medelegh;
+        // Machine trap status
+        12'h300: read_data = mstatus;
+        12'h301: read_data = misa;
+        12'h302: read_data = medeleg;
+        12'h303: read_data = mideleg;
+        12'h304: read_data = mie;
+        12'h305: read_data = mtvec;
+        12'h306: read_data = mcouteren;
+        12'h310: read_data = mstatush;
+        12'h312: read_data = medelegh;
 
-      // Machine trap handling
-      12'h340: read_data = mscratch;
-      12'h341: read_data = mepc;
-      12'h342: read_data = mcause;
-      12'h343: read_data = mtval;
-      12'h344: read_data = mip;
-      12'h34a: read_data = mtinst;
-      12'h34b: read_data = mtval2;
+        // Machine trap handling
+        12'h340: read_data = mscratch;
+        12'h341: read_data = mepc;
+        12'h342: read_data = mcause;
+        12'h343: read_data = mtval;
+        12'h344: read_data = mip;
+        12'h34a: read_data = mtinst;
+        12'h34b: read_data = mtval2;
 
-      // Machine configuration
-      12'h30a: read_data = menvcfg;
-      12'h31a: read_data = menvcfgh;
-      12'h747: read_data = mseccfg;
-      12'h757: read_data = mseccfgh;
-
-      default: read_data = 32'hx;
-    endcase
+        // Machine configuration
+        12'h30a: read_data = menvcfg;
+        12'h31a: read_data = menvcfgh;
+        12'h747: read_data = mseccfg;
+        12'h757: read_data = mseccfgh;
+        default: begin
+          read_data   = 32'hx;
+          invalid_csr = 1;
+        end
+      endcase
+    end
   end
 
   // Write logic
-  wire wr_en;
-  wire [31:0] wr_val;
 
   // FIXME / TODO - this is not correct vis-a-vis rs1/rd=x0
   assign wr_en = is_csrrw || is_csrrwi || is_csrrs || is_csrrsi || is_csrrc || is_csrrci;
@@ -165,7 +201,7 @@ module zicsr (
       mconfigptr <= 32'b0;
 
       // Machine trap registers
-      mstatus <= 32'b0;
+      //mstatus <= 32'b0;
       misa <= 32'b0;
       medeleg <= 32'b0;
       mideleg <= 32'b0;
@@ -179,7 +215,7 @@ module zicsr (
       mscratch <= 32'b0;
       // mepc <= 32'b0;
       // mcause <= 32'b0;
-      mtval <= 32'b0;
+      // mtval <= 32'b0;
       mip <= 32'b0;
       mtinst <= 32'b0;
       mtval2 <= 32'b0;
@@ -223,8 +259,9 @@ module zicsr (
       stvec <= 32'b0;
     end else if (wr_en) begin
       // Machine trap status
-      if (csr == 12'h300) mstatus <= wr_val;
-      else if (csr == 12'h301) misa <= wr_val;
+      //if (csr == 12'h300)
+      //    mstatus <= wr_val;
+      if (csr == 12'h301) misa <= wr_val;
       else if (csr == 12'h302) medeleg <= wr_val;
       else if (csr == 12'h303) mideleg <= wr_val;
       else if (csr == 12'h304) mie <= wr_val;
@@ -239,7 +276,8 @@ module zicsr (
       //    mepc <= wr_val;
       //else if (csr == 12'h342)
       //    mcause <= wr_val;
-      else if (csr == 12'h343) mtval <= wr_val;
+      //else if (csr == 12'h343)
+      //    mtval <= wr_val;
       else if (csr == 12'h344) mip <= wr_val;
       else if (csr == 12'h34a) mtinst <= wr_val;
       else if (csr == 12'h34b) mtval2 <= wr_val;
@@ -260,35 +298,90 @@ module zicsr (
   end
 
   always @(posedge clk or negedge rst_n) begin
+    if (~rst_n) mstatus <= 32'b0;
+    else if (exception_occurred) mstatus[12:11] <= priv_mode;
+    else if (is_mret) mstatus[12:11] <= 2'b00;
+    else if (is_sret) mstatus[8] <= 1'b0;
+    else if (wr_en && csr == 12'h300) mstatus <= wr_val;
+    else mstatus <= mstatus;
+  end
+
+  always @(posedge clk or negedge rst_n) begin
     if (~rst_n) mcause <= 32'b0;
     else begin
-      if (is_ebreak && priv_mode == 3'b11) mcause <= 3;
+      case (1'b1)
+        trap_instr_addr_misaligned: mcause <= 0;
+        trap_illegal_instr: mcause <= 2;
+        (is_ebreak && priv_mode == 3'b11): mcause <= 3;
+        trap_ld_addr_misaligned: mcause <= 4;
+        trap_ld_access_fault: mcause <= 5;
+        trap_st_amo_addr_misaligned: mcause <= 6;
+        trap_st_amo_access_fault: mcause <= 7;
+        (wr_en && csr == 12'h342): mcause <= wr_val;
+        default: mcause <= mcause;
+      endcase
+    end
+  end
+
+  always @(posedge clk or negedge rst_n) begin
+    if (~rst_n) mtval <= 32'b0;
+    else begin
+      case (1'b1)
+        trap_instr_addr_misaligned: mtval <= pc;
+        trap_illegal_instr: mtval <= pc;
+        (is_ebreak && priv_mode == 3'b11): mtval <= pc;
+        trap_ld_addr_misaligned: mtval <= mem_addr;
+        trap_ld_access_fault: mtval <= mem_addr;
+        trap_st_amo_addr_misaligned: mtval <= mem_addr;
+        trap_st_amo_access_fault: mtval <= mem_addr;
+        (wr_en && csr == 12'h343): mtval <= wr_val;
+        default: mtval <= mtval;
+      endcase
+    end
+  end
+
+  always @(posedge clk or negedge rst_n) begin
+    if (~rst_n) mtval <= 32'b0;
+    else begin
+      case (1'b1)
+        trap_instr_addr_misaligned: mtval <= pc;
+        trap_illegal_instr: mtval <= instr;
+        (is_ebreak && priv_mode == 3'b11): mtval <= pc;
+        trap_ld_addr_misaligned: mtval <= mem_addr;
+        trap_ld_access_fault: mtval <= mem_addr;
+        trap_st_amo_addr_misaligned: mtval <= mem_addr;
+        trap_st_amo_access_fault: mtval <= mem_addr;
+        (wr_en && csr == 12'h343): mtval <= wr_val;
+        default: mtval <= mtval;
+      endcase
     end
   end
 
   always @(posedge clk or negedge rst_n) begin
     if (~rst_n) scause <= 32'b0;
-    else begin
-      if (is_ebreak && priv_mode == 3'b01) scause <= 3;
-    end
+    else if (is_ebreak && priv_mode == 3'b01) scause <= 3;
   end
 
   always @(posedge clk or negedge rst_n) begin
     if (~rst_n) mepc <= 32'b0;
+    else if (exception_occurred) mepc <= pc;
     else if (wr_en && csr == 12'h341) mepc <= wr_val;
-    else if (is_ebreak && priv_mode == 3'b11) mepc <= pc;
+    else mepc <= mepc;
   end
 
   always @(posedge clk or negedge rst_n) begin
     if (~rst_n) sepc <= 32'b0;
+    else if (priv_mode == 2'b01 && exception_occurred) sepc <= pc;
     else if (wr_en && csr == 12'h141) sepc <= wr_val;
-    else if (is_ebreak && priv_mode == 3'b01) sepc <= pc;
+    else sepc <= sepc;
   end
 
   always @(posedge clk or negedge rst_n) begin
     if (~rst_n) begin
       priv_mode <= 2'b11;
-    end else if (is_mret) priv_mode <= mstatus[12:11];
+    end else if (exception_occurred) priv_mode <= 2'b11;
+    else if (is_mret) priv_mode <= mstatus[12:11];
+    else if (is_sret) priv_mode <= {1'b0, mstatus[8]};
   end
   // Read logic
 
