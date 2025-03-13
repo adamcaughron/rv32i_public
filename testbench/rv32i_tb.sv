@@ -1,6 +1,6 @@
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
-import "DPI-C" task initialize_rvfi_dii(input int portnum);
+import "DPI-C" task initialize_rvfi_dii(input int portnum, input int spawn_client, input int num_tests);
 import "DPI-C" function void finalize_rvfi_dii();
 
 module rv32i_tb ();
@@ -108,13 +108,18 @@ module rv32i_tb ();
         $finish;
     end else if ($test$plusargs("dii")) begin
         automatic int portnum = 0;
+        automatic int spawn_client = 1;
+        automatic int dii_num_tests  = 0;
 
         $value$plusargs("portnum=%d", portnum);
+        if ($test$plusargs("manual_dii_client"))
+            spawn_client = 0;
+        $value$plusargs("num_tests=%d", dii_num_tests);
 
         rvfi_dii_enable = 1;
         halt = 1;
         $display("Initializing RVFS-DII socket via DPI call from rv32i_tb...");
-        initialize_rvfi_dii(portnum);
+        initialize_rvfi_dii(portnum, spawn_client, dii_num_tests);
     end else begin
         $display("-E- please specify one of: +test=<test>, +all_tests, +dii");
     end

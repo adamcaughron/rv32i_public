@@ -78,26 +78,19 @@ To run a specific test:
 $ ./compile_and_run.sh <test_name[.hex]>
 ```
 
-To run random instruction streams in RVFI-DII mode, you will need two shells -- one to run DSim, and another to run TestRIG.
-In the first shell, set up the DSim environment and run (from the sim directory):
+To run random instruction streams in RVFI-DII mode:
 ```sh
 $ ./compile_and_run.sh dii
-```
-You will see a message like the following. Note the port number (which will likely differ):
-```
-rvfi_dii_server_thread: Ready for client to connect on port 47889...
-```
-In the second shell, from the TestRIG directory, run the following, substituting the port number from your DSim run:
-```sh
-$ utils/scripts/runTestRIG.py -b manual --implementation-B-port 47889
 ```
 
 ### Testbench plusargs
 These are the SV plusargs supported by the testbench. These are useful if you edit `run.sh` or invoke `dsim` directly.
-|Plusarg              |Description                                                                      |
-|---------------------|---------------------------------------------------------------------------------|
-|+test=\<test\_name\> | For running a single test. Specified with or without '.hex' extension           |
-|+all\_tests          | Run all tests listed in `all_riscv_tests.sv` at elaboration time                |
-|+dii                 | Run the testbench in RVFI-DII mode. (Will wait for incoming socket connection.) |
-|+portnum             | For use with +dii, to specify the port for the RVFI-DII engine to connect to.   |
+|Plusarg                    |Description                                                                      |
+|---------------------------|---------------------------------------------------------------------------------|
+|+test=\<test\_name\>       | For running a single test. Specified with or without '.hex' extension           |
+|+all\_tests                | Run all tests listed in `all_riscv_tests.sv` at elaboration time                |
+|+dii                       | Run the testbench in RVFI-DII mode. (Will wait for incoming socket connection.) |
+|+portnum=\<port\_num\>     | For use with +dii, to specify the port for the RVFI-DII engine to connect to.   |
+|+manual\_dii\_client       | For use with +dii, the testbench will not start the RVFI\_DII engine.           |
+|+num\_tests=\<num\_tests\> | For use with +dii, to specify the number of tests to run.                       |
 

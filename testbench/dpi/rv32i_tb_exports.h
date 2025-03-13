@@ -4,6 +4,9 @@
 extern "C" {
 #endif
 
+/* DPI imports */
+void initialize_rvfi_dii(int, bool, int);
+void finalize_rvfi_dii();
 
 /* DPI exports */
 void do_halt();
