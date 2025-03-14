@@ -4,14 +4,14 @@
 #include <mutex>
 #include <netinet/in.h>
 #include <queue>
+#include <sstream>
 #include <string>
+#include <sys/syscall.h>
+#include <sys/wait.h>
 #include <thread>
 #include <unistd.h>
 
 #include "rv32i_tb_exports.h"
-
-// forward declarations
-void shutdown_server_thread();
 
 /*
  * See https://github.com/CTSRD-CHERI/TestRIG/blob/master/RVFI-DII.md
@@ -114,18 +114,42 @@ const uint64_t mem_data_magic = 0x617461642d6d656d;
 #pragma pack(pop)
 
 std::mutex mtx;
+std::mutex shutdown_mutex;
 std::condition_variable cv;
 std::queue<RVFI_DII_Execution_PacketV2> execution_packet_queue;
 std::queue<RVFI_DII_Execution_Packet_Ext_Integer> ext_integer_packet_queue;
 std::queue<RVFI_DII_Execution_Packet_Ext_MemAccess> ext_mem_packet_queue;
 std::queue<RVFI_DII_Instruction_Packet> instruction_packet_queue;
 
+std::thread server;
+std::thread client;
+
+// forward declarations
+void shutdown_server_thread();
+void shutdown_client_thread();
+
 bool server_started = false;
 bool time_to_exit = false;
-bool client_connected = false;
+bool client_connected_or_dead = false;
 
 int portnum;
+int server_fd;
 int rvfi_dii_socket;
+pid_t testrig_vengine_pid;
+
+void shutdown_client_server() {
+  std::lock_guard<std::mutex> lock(shutdown_mutex);
+  shutdown_client_thread();
+  shutdown_server_thread();
+}
+
+void signalHandler(int signum) {
+  std::cout << "Interrupt signal (" << signum
+            << ") received. Shutting down the server and client threads..."
+            << std::endl;
+
+  shutdown_client_server();
+}
 
 void rvfi_dii_client_thread(int num_tests) {
   std::string test_rig_cmd = "../TestRIG/utils/scripts/runTestRIG.py -b "
@@ -141,24 +165,49 @@ void rvfi_dii_client_thread(int num_tests) {
             << std::endl
             << test_rig_cmd << std::endl;
 
-  int result = system(test_rig_cmd.c_str());
+  // Convert test_rig_cmd to char*[] for execvp
+  std::istringstream iss(test_rig_cmd);
+  std::vector<std::string> args;
+  std::string word;
 
-  //
-  if (result == 0) {
-    std::cout << "rvfi_dii_client_thread: TestRIG process completed normally. "
-                 "Exiting..."
-              << std::endl;
+  while (iss >> word) {
+    args.push_back(word);
+  }
+
+  std::vector<char *> c_args;
+
+  for (auto &arg : args) {
+    // c_args.push_back(arg.data()); // TODO update to C++20
+    c_args.push_back(&arg[0]);
+  }
+  c_args.push_back(nullptr);
+
+  int result = 0;
+
+  testrig_vengine_pid = fork();
+  int status;
+  if (testrig_vengine_pid == 0) {
+    // In child process: Replace current process with actual command
+    execvp(c_args[0], c_args.data());
+    perror("rvfi_dii_client_thread: execvp failed");
+    exit(1); // If exec fails, exit child process
+  } else if (testrig_vengine_pid < 0) {
+    std::cerr << "Fork failed!" << std::endl;
   } else {
-    std::cout
-        << "rvfi_dii_client_thread: TestRIG process failed with exit code "
-        << result << ". Terminating server thread, if it is still running..."
-        << std::endl;
-    shutdown_server_thread();
+    // Parent process: Just wait for the child to finish
+    waitpid(testrig_vengine_pid, &status, 0);
+    if ((!WIFEXITED(status)) || (WIFEXITED(status) && WEXITSTATUS(status))) {
+      std::cerr << "rvfi_dii_client_thread: TestRIG exited abnormally. "
+                   "Attempting graceful shutdown..."
+                << std::endl;
+      time_to_exit = true;
+      client_connected_or_dead = true;
+      cv.notify_all();
+    }
   }
 }
 
 void rvfi_dii_server_thread() {
-  int server_fd;
   struct sockaddr_in address;
   int opt = 1;
   int addrlen = sizeof(address);
@@ -176,6 +225,12 @@ void rvfi_dii_server_thread() {
     perror("setsockopt");
     exit(EXIT_FAILURE);
   }
+
+  // Set SO_RCVTIMEO (2-second timeout for accept)
+  struct timeval timeout;
+  timeout.tv_sec = 2;  // 2 seconds
+  timeout.tv_usec = 0; // 0 microseconds
+  setsockopt(server_fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
 
   address.sin_family = AF_INET;
   address.sin_addr.s_addr = INADDR_ANY;
@@ -210,12 +265,22 @@ void rvfi_dii_server_thread() {
 
   // Notify parent thread
   server_started = true;
-  cv.notify_one();
+  cv.notify_all();
 
-  if ((rvfi_dii_socket = accept(server_fd, (struct sockaddr *)&address,
-                                (socklen_t *)&addrlen)) < 0) {
-    perror("accept");
-    exit(EXIT_FAILURE);
+  while (true) {
+    if ((rvfi_dii_socket = accept(server_fd, (struct sockaddr *)&address,
+                                  (socklen_t *)&addrlen)) < 0) {
+      if (errno == EWOULDBLOCK || errno == EAGAIN) {
+        if (time_to_exit) {
+          return;
+        }
+        continue;
+      }
+      perror("accept");
+      exit(EXIT_FAILURE);
+    } else {
+      break;
+    }
   }
 
   std::cout << "rvfi_dii_server_thread: RVFI_DII VEngine client connection "
@@ -306,12 +371,15 @@ void rvfi_dii_server_thread() {
 
   std::cout << std::flush;
 
-  client_connected = true;
-  cv.notify_one();
+  client_connected_or_dead = true;
+  cv.notify_all();
 
   // stayin' alive
-  std::unique_lock<std::mutex> lock(mtx);
-  cv.wait(lock, [] { return time_to_exit; });
+  do {
+    std::unique_lock<std::mutex> lock(mtx);
+    cv.wait(lock, [] { return time_to_exit; });
+  } while (!time_to_exit);
+
   std::cout
       << "rvfi_dii_server_thread received signal; cleaning up and exiting..."
       << std::endl;
@@ -438,9 +506,6 @@ uint32_t get_next_instr_packet() {
   return instr->rvfi_instr;
 }
 
-std::thread server;
-std::thread client;
-
 RVFI_DII_Execution_PacketV2 exec_packet;
 RVFI_DII_Execution_Packet_InstMetaData exec_inst_meta_data;
 RVFI_DII_Execution_Packet_PC exec_packet_pc;
@@ -450,23 +515,42 @@ RVFI_DII_Execution_Packet_Ext_MemAccess exec_ext_mem_data;
 uint64_t rvfi_order = 0;
 
 void shutdown_server_thread() {
-  // Move this to a C++ function (TODO):
-  {
-    std::lock_guard<std::mutex> lock(mtx);
-    time_to_exit = true;
+  time_to_exit = true;
+  cv.notify_all();
+  if (server.joinable()) {
+    server.join();
   }
-  cv.notify_one();
+}
+void shutdown_client_thread() {
+  if (testrig_vengine_pid) {
+    std::cout << "Killing TestRIG subprocess " << (intmax_t)testrig_vengine_pid
+              << std::endl;
+    kill(testrig_vengine_pid, SIGKILL);
+    testrig_vengine_pid = 0;
+  }
+  if (client.joinable()) {
+    client.join();
+  }
 }
 
 extern "C" {
 void initialize_rvfi_dii(int _portnum = 0, bool spawn_client = true,
                          int num_tests = 0) {
-  std::unique_lock<std::mutex> lock(mtx);
   printf("In initialize_rvfi_dii of %s; starting rvfi_dii server "
          "thread...\n",
          __FILE__);
-  time_to_exit = false;
 
+  struct sigaction sa;
+  sigemptyset(&sa.sa_mask);
+  sa.sa_flags = 0;
+
+  sa.sa_handler = SIG_IGN;          // Ignore SIGPIPE globally
+  sigaction(SIGPIPE, &sa, nullptr); // Register SIGPIPE handler
+
+  sa.sa_handler = signalHandler;
+  sigaction(SIGINT, &sa, nullptr); // Register SIGINT handler
+
+  time_to_exit = false;
   portnum = _portnum;
 
   // Move this to a C++ function (TODO):
@@ -474,6 +558,7 @@ void initialize_rvfi_dii(int _portnum = 0, bool spawn_client = true,
 
   // Wait for server to start
   do {
+    std::unique_lock<std::mutex> lock(mtx);
     cv.wait(lock, [] { return server_started; });
   } while (!server_started);
 
@@ -484,20 +569,16 @@ void initialize_rvfi_dii(int _portnum = 0, bool spawn_client = true,
 
   // Wait for client to connect
   do {
-    cv.wait(lock, [] { return client_connected; });
-  } while (!client_connected);
+    std::unique_lock<std::mutex> lock(mtx);
+    cv.wait(lock, [] { return client_connected_or_dead; });
+  } while (client.joinable() && !client_connected_or_dead);
 }
 
 void finalize_rvfi_dii() {
   printf("In finalize_rvfi_dii of %s. Asking server thread to "
          "stop....\n",
          __FILE__);
-
-  if (client.joinable()) {
-    client.join();
-  }
-  shutdown_server_thread();
-  server.join();
+  shutdown_client_server();
 }
 
 void rvfi_set_inst_meta_data(uint64_t rvfi_inst, uint8_t rvfi_trap,
