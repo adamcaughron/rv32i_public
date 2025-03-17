@@ -14,6 +14,7 @@ The core currently supports the following features:
 
 The testbench supports the following modes of operation:
 - Execution of elf files via conversion to backdoor-loadable initialization files
+- [RVFI-EXT](https://github.com/adamcaughron/sail-riscv) (RISC-V Formal Interface - EXecution Trace) per-instruction ELF file execution trace comparison between RTL simulation and `sail-riscv` ISA simulator (requires `sail-riscv` simulator customization, see notes.)
 - [RVFI-DII](https://github.com/CTSRD-CHERI/TestRIG/blob/master/RVFI-DII.md) (RISC-V Formal Interface - Direct Instruction Injection) random instruction streams and comparison against [sail-riscv](https://github.com/riscv/sail-riscv/tree/master) ISA simulator via integration with [TestRIG](https://github.com/CTSRD-CHERI/TestRIG/tree/master)
 
 Verification status:
@@ -48,7 +49,7 @@ $ make
 $ utils/scripts/runTestRIG.py
 ```
 
-Note, the above instructions from the TestRIG repo build some things which this repo doesn't use. The `make` command can be ammended as follows to build fewer targets, but the `runTestRIG.py` command should still pass before proceeding: 
+Note, the above instructions from the TestRIG repo build some things which this repo doesn't use. The `make` command can be ammended as follows to build fewer targets, but the `runTestRIG.py` command should still pass before proceeding:
 ```sh
 $ make vengines sail
 $ utils/scripts/runTestRIG.py
@@ -74,8 +75,8 @@ $ ./compile_and_run.sh
 ```
 
 To run a specific test:
-```sh
-$ ./compile_and_run.sh <test_name[.hex]>
+```
+$ ./compile_and_run.sh <[/path/]test_name.hex | [/path/]test_name.elf>
 ```
 
 To run random instruction streams in RVFI-DII mode:
@@ -83,14 +84,37 @@ To run random instruction streams in RVFI-DII mode:
 $ ./compile_and_run.sh dii
 ```
 
-### Testbench plusargs
-These are the SV plusargs supported by the testbench. These are useful if you edit `run.sh` or invoke `dsim` directly.
-|Plusarg                    |Description                                                                      |
-|---------------------------|---------------------------------------------------------------------------------|
-|+test=\<test\_name\>       | For running a single test. Specified with or without '.hex' extension           |
-|+all\_tests                | Run all tests listed in `all_riscv_tests.sv` at elaboration time                |
-|+dii                       | Run the testbench in RVFI-DII mode. (Will wait for incoming socket connection.) |
-|+portnum=\<port\_num\>     | For use with +dii, to specify the port for the RVFI-DII engine to connect to.   |
-|+manual\_dii\_client       | For use with +dii, the testbench will not start the RVFI\_DII engine.           |
-|+num\_tests=\<num\_tests\> | For use with +dii, to specify the number of tests to run.                       |
+To run with RVFI-EXT (EXecution Trace comparison against `sail-riscv` ISA simulator), add `+rvfi_ext` to the simulation command, eg:
+```
+$ ./compile_and_run.sh +rvfi_ext //run all tests
+$ ./compile_and_run.sh <test_name.elf> +rvfi_ext  // run single test
+```
 
+### Testbench plusargs
+These are the SV plusargs supported by the testbench. Plusargs can be appended to "./compile\_and\_run.sh ..." and "./run.sh ..." commands above.
+|Plusarg                    |Description                                                                                    |
+|---------------------------|-----------------------------------------------------------------------------------------------|
+|+test=\<test\_name\>       | For running a single test. Specified with or without '.hex' extension                         |
+|+all\_tests                | Run all tests listed in `all_riscv_tests.sv` at elaboration time                              |
+|+dii                       | Run the testbench in RVFI-DII mode. (Will wait for incoming socket connection.)               |
+|+portnum=\<port\_num\>     | For use with +dii, to specify the port for the RVFI-DII engine to connect to.                 |
+|+manual\_dii\_client       | For use with +dii, the testbench will not start the RVFI\_DII engine.                         |
+|+num\_tests=\<num\_tests\> | For use with +dii, to specify the number of tests to run.                                     |
+|+rvfi\_ext                  | Compare execution trace against `sail-riscv` ISA simulator. Requires an ELF file via `+test`.|
+
+### RVFI-EXT - EXecution Trace comparison against `sail-riscv` ISA simulator
+`RVFI-EXT` mode executes an ELF file in parrallel on RTL simulation and the `sail-riscv` ISA simulator, and compares each retired instruction and associated state updates. Append `+rvfi_ext` to the test command to activate it.
+
+`RVFI-EXT` mode requires some customization to the `sail-riscv` model and C emulator, provided in a [fork](https://github.com/adamcaughron/sail-riscv) of the [upstream](https://github.com/riscv/sail-riscv) repository, and included as a subrepo here, at `rv32i_public/sail-riscv`.
+
+Building the customized `sail-riscv` simulator requires some slightly different dependencies from the build in the `TestRIG` repo (which is still used for `RVFI_DII` mode).
+- C++20 support
+- Opam 5.3.0 (`opam switch create . 5.3.0`)
+- Sail 0.19 (`opam pin sail 0.19`)
+- z3 (`opam install z3`)
+
+Finally, to build the ISA simulator executable:
+```sh
+$ rm build/CMakeCache.txt
+$ ./build_simulators.sh
+```

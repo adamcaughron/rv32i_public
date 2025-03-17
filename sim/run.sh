@@ -13,53 +13,21 @@ if [ -n "$1" ]; then
   if [[ "$1" == "dii" ]]; then
     shift;
     dsim_cmd="${dsim_cmd} +dii ${@}"
+  elif [[ "$1" == "all_tests" ]]; then
+    shift;
+    dsim_cmd="$dsim_cmd +all_tests ${@}"
+  elif [[ "$1" == "+rvfi_ext" ]]; then
+    dsim_cmd="$dsim_cmd +all_tests ${@}"
   else
-    test_name="$1"
-
-    # Strip the extension from the test name if necessary
-    if [[ "$test_name" == *.* ]]; then
-      base_test_name="${test_name%.*}"
-    else
-      base_test_name="$test_name"
-    fi
-
-    # If input test name is not a file, try
-    # to generate it from the sail-risv tests
-
-    test_name_plus_ext="${base_test_name}.hex"
-    if [ -f "$1" ]; then
-      test_name=$1;
-    elif [ -f "$test_name_plus_ext" ]; then
-      test_name="$test_name_plus_ext";
-    else
-      # Try to generate it from the sail-risv tests
-      test_name_elf="${base_test_name}.elf"
-
-    if [[ ! -d "$sail_riscv_install_path" ]]; then
-      echo "sail-riscv repo not found at $sail_riscv_install_path. Did you git init sub-repos?"
-      exit 1
-    fi
-
-    # TODO, this builds all tests, add support to generate single test
-    gen_test_cmd="python3 generate_riscv_tests.py ${sail_riscv_install_path}"
-
-      eval $gen_test_cmd
-
-      if [[ ! -f "$test_name_plus_ext" ]]; then
-        echo "Neither $1 nor $test_name_plus_ext found in \$PWD, atte"
-        exit 1
-      fi
-    fi
-    dsim_cmd="$dsim_cmd +test=$base_test_name"
+    testname=$1
+    shift
+    dsim_cmd="$dsim_cmd +test=${testname} ${@}"
   fi
 else
   if [[ ! -d "$sail_riscv_install_path" ]]; then
     echo "sail-riscv repo not found at $sail_riscv_install_path. Did you git init sub-repos?"
     exit 1
   fi
-  gen_test_cmd="python3 generate_riscv_tests.py ${sail_riscv_install_path}"
-  rm *hex || true
-  eval $gen_test_cmd
   dsim_cmd="$dsim_cmd +all_tests"
 fi
 

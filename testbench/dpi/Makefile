@@ -2,18 +2,23 @@
 CXX = g++
 CXXFLAGS = -c -fPIC -I$(DSIM_HOME)/include/
 LDFLAGS = -shared
+
 TARGET = rv32i_tb.so
-OBJECT = rvfi_dii.o
-SOURCE = rvfi_dii.cpp
+
+# Source and Object Files
+SOURCES = rvfi_dii.cpp rvfi_ext.cpp
+OBJECTS = $(SOURCES:.cpp=.o)
 
 all: $(TARGET)
 
-$(OBJECT): $(SOURCE)
+# Compile each .cpp into .o
+%.o: %.cpp
 	$(CXX) $(CXXFLAGS) -o $@ $<
 
-$(TARGET): $(OBJECT)
+# Link object files into shared library
+$(TARGET): $(OBJECTS)
 	$(CXX) $(LDFLAGS) -o $@ $^
 
 clean:
-	rm -f $(OBJECT) $(TARGET)
+	rm -f $(OBJECTS) $(TARGET)
 

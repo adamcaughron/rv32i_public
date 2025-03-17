@@ -1,3 +1,6 @@
 [submodule "TestRIG"]
 	path = TestRIG
 	url = git@github.com:CTSRD-CHERI/TestRIG.git
+[submodule "sail-riscv"]
+	path = sail-riscv
+	url = git@github.com:adamcaughron/sail-riscv.git

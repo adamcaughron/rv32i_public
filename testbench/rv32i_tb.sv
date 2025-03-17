@@ -3,19 +3,86 @@
 import "DPI-C" task initialize_rvfi_dii(input int portnum, input int spawn_client, input int num_tests);
 import "DPI-C" function void finalize_rvfi_dii();
 
+import "DPI-C" function void initialize_rvfi_ext();
+import "DPI-C" function void finalize_rvfi_ext();
+
+import "DPI-C" function void initialize_sail_ref_model(string);
+import "DPI-C" function void finalize_sail_ref_model();
+
+function automatic int split_ext(string path, ref string base, ref string ext);
+    int dot_pos = path.len();
+    for (int i=path.len()-1; i>=0; i--) begin
+        if (path[i] == ".") begin
+            dot_pos = i;
+            break;
+        end else if (path[i] == "/")
+            break;
+    end
+    base = path.substr(0, dot_pos-1);
+    ext = path.substr(dot_pos + 1, path.len()-1);
+    return dot_pos == path.len() ? -1 : dot_pos;
+endfunction
+
+function automatic int split(string path, ref string directory, ref string filename);
+    int i;
+    for (i=path.len()-1; i>=0; i--) begin
+        if (path[i] == "/") begin
+            break;
+        end
+    end
+    directory = path.substr(0, i==0 || i == 1 ? 0 : i-1);
+    filename = path.substr(i + 1, path.len()-1);
+    return i;
+endfunction
+
+function automatic string basename(string path);
+    string directory;
+    void'(split(path, directory, basename));
+endfunction
+
+function string elf_to_hex(string elf_file);
+    string elf_to_hex_cmd;
+    string test_path;
+    string test_basename;
+    string test_name;
+    string test_extension;
+    string hex_mem_file;
+
+    void'(split(elf_file, test_path, test_basename));
+    void'(split_ext(test_basename, test_name, test_extension));
+
+    elf_to_hex_cmd = $sformatf("python3 parse_dump.py %s", elf_file);
+    $display("Running system command: %s", elf_to_hex_cmd);
+    $system(elf_to_hex_cmd);
+    elf_to_hex = $sformatf("%s.hex", test_name);
+endfunction
+
+function string get_elf_from_test_name(string test_basename);
+    string test_name;
+    string test_extension;
+    string elf_file;
+
+    void'(split_ext(test_basename, test_name, test_extension));
+
+    elf_file = $sformatf("../TestRIG/riscv-implementations/sail-riscv/test/riscv-tests/%s.elf", test_name);
+
+    return elf_file;
+endfunction
+
 module rv32i_tb ();
 
   string all_tests[] = '{
       `include "all_riscv_tests.sv"
   };
 
-  string test_name;
+  string test_arg="";
 
   reg clk = 0;
   reg rst_n = 0;
   reg halt = 0;
   reg unhalt = 0;
   reg do_finish = 0;
+  reg rvfi_ext_enable = 0;
   reg rvfi_dii_enable = 0;
 
 
@@ -26,7 +93,7 @@ module rv32i_tb ();
     //.halt(halt)
   );
 
-  bind i_rv32i_core rv32i_dii i_rv32i_dii(rv32i_tb.rvfi_dii_enable, rv32i_tb.halt);
+  bind i_rv32i_core rv32i_dii i_rv32i_dii(rv32i_tb.rvfi_ext_enable, rv32i_tb.rvfi_dii_enable, rv32i_tb.halt);
 
   task load_test(string test_mem_file);
       // Program memory initialization
@@ -83,27 +150,84 @@ module rv32i_tb ();
 
   task run_test(string test_name);
     load_test(test_name);
+    halt = 0;
     reset_pulse();
     poll_for_test_completion(test_name);
+    halt = 1;
+    @(posedge clk);
+  endtask
+
+  task execute_elf_test(string elf_file);
+    string hex_mem_file;
+
+    if ($test$plusargs("rvfi_ext")) begin
+        initialize_rvfi_ext();
+        initialize_sail_ref_model(elf_file);
+        rvfi_ext_enable = 1;
+    end
+
+    hex_mem_file = elf_to_hex(elf_file);
+    run_test(hex_mem_file);
+
+    if (rvfi_ext_enable) begin
+        $display("execute_elf_test calling finalize_sail_ref_model");
+        finalize_sail_ref_model();
+    end
   endtask
 
   initial begin
-    if ($value$plusargs("test=%s", test_name)) begin
-        // check for .hex extension, add it if needed:
-        automatic int len = test_name.len();
-        if (!(test_name.substr(len-4, len-1) == ".hex"))
-            test_name = {test_name, ".hex"};
-        rvfi_dii_enable = 0;
+    string test_path;
+    string test_basename;
+    string test_name;
+    string test_extension;
+    string hex_mem_file;
 
-        $display("Running test %s (from \"test\" commandline arg)", test_name);
-        run_test(test_name);
-        $finish;
+    $value$plusargs("test=%s", test_arg);
+    void'(split(test_arg, test_path, test_basename));
+    void'(split_ext(test_basename, test_name, test_extension));
+
+    /*
+    $display("test_arg = %s", test_arg);
+    $display("test_path = %s", test_path);
+    $display("test_basename = %s", test_basename);
+    $display("test_name = %s", test_name);
+    $display("test_extension = %s", test_extension);
+    */
+
+    if ($test$plusargs("rvfi_ext") && !$test$plusargs("dii")) begin
+        if (test_arg=="" && !$test$plusargs("all_tests")) begin
+            $display("When +rvfi_ext is specified, either a test must be specified with +test arg, or +all_tests must be specified.");
+            $finish;
+        end
+
+        if (test_extension != "" && test_extension.tolower() != "elf") begin
+           $display("When +rvfi_ext is specified, the provided +test argument must be an elf file.");
+           $finish;
+        end
+    end
+
+    if (test_arg != "") begin
+        string test_hex_file;
+        $display("test name is %s", test_name);
+
+        // check for .hex extension, add it if needed:
+        if (test_extension.tolower() == "elf") begin
+            //test_hex_file = elf_to_hex(test_arg);
+            execute_elf_test(test_arg);
+        end else begin
+           rvfi_dii_enable = 0;
+           $display("Running test %s (from \"test\" commandline arg)", test_name);
+           run_test(test_arg);
+       end
+       $finish;
     end else if ($test$plusargs("all_tests")) begin
+        string elf_file;
         rvfi_dii_enable = 0;
         $display("Running all tests...");
         for (int j=0; j<all_tests.size(); j++) begin
             $display("Test %d: %s", j, all_tests[j]);
-            run_test(all_tests[j]);
+            elf_file = get_elf_from_test_name(all_tests[j]);
+            execute_elf_test(elf_file);
         end
         $finish;
     end else if ($test$plusargs("dii")) begin
@@ -117,11 +241,14 @@ module rv32i_tb ();
         $value$plusargs("num_tests=%d", dii_num_tests);
 
         rvfi_dii_enable = 1;
+        rvfi_ext_enable = 1;
         halt = 1;
         $display("Initializing RVFS-DII socket via DPI call from rv32i_tb...");
         initialize_rvfi_dii(portnum, spawn_client, dii_num_tests);
+        initialize_rvfi_ext();
     end else begin
         $display("-E- please specify one of: +test=<test>, +all_tests, +dii");
+        $finish;
     end
   end
 
@@ -143,6 +270,8 @@ module rv32i_tb ();
   final begin
      if (rvfi_dii_enable)
         finalize_rvfi_dii();
+      if (rvfi_ext_enable)
+        finalize_rvfi_ext();
   end
 
 endmodule // rv32i_tb
