@@ -19,6 +19,7 @@ reg [31:0] nxt_pc_w_trap;
 reg [31:0] ld_data;
 reg [31:0] csr_read_data;
 reg invalid_csr;
+wire medelegated;
 
 wire dec_err;
 wire [5:0] rd;
@@ -122,8 +123,8 @@ assign nxt_pc = {
         is_sret ? i_zicsr.sepc : nxt_seq_pc } [31:0];
 
 
-assign nxt_pc_w_trap = instr_trap ? (i_zicsr.priv_mode == 2'b11 ? {i_zicsr.mtvec[31:2], 2'b00} :
-                                                                  {i_zicsr.stvec[31:2], 2'b00} ) : nxt_pc;
+assign nxt_pc_w_trap = instr_trap ? ( !medelegated ? {i_zicsr.mtvec[31:2], 2'b00} :
+                                                     {i_zicsr.stvec[31:2], 2'b00} ) : nxt_pc;
 
 
 // INSTRUCTION FETCH

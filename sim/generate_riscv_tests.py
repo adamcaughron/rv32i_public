@@ -21,8 +21,6 @@ exclude_test_patterns = [
     "rv64",
     "rv32mi-p-breakpoint",
     "rv32mi-p-illegal",
-    "rv32mi-p-ma_fetch",
-    "rv32mi-p-mcsr",
     "rv32si-p-dirty",
     "rv32si-p-ma_fetch",
     "rv32si-p-wfi",

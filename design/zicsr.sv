@@ -4,6 +4,7 @@ module zicsr (
 
     output logic [31:0] read_data,
     output logic invalid_csr,
+    output wire medelegated,
 
     input [31:0] write_data,
     input [11:0] csr,
@@ -105,12 +106,25 @@ module zicsr (
   reg [31:0] sepc;
   reg [31:0] scause;
 
+  // Supervisor Protection and Translation
+  reg [31:0] satp;
+
 
   // etc...
 
   wire wr_en;
   wire rd_end;
   wire [31:0] wr_val;
+
+  assign medelegated = trap_instr_addr_misaligned && medeleg[0] ||
+                       trap_illegal_instr && medeleg[2] ||
+                       trap_breakpt && medeleg[3] ||
+                       trap_ld_addr_misaligned && medeleg[4] ||
+                       trap_ld_access_fault && medeleg[5] ||
+                       trap_st_amo_addr_misaligned && medeleg[6] ||
+                       trap_st_amo_access_fault && medeleg[7] ||
+                       (is_ecall && priv_mode == 3'b00) && medeleg[8] ||
+                       (is_ecall && priv_mode == 3'b01) && medeleg[9];
 
   wire exception_occurred = is_ebreak ||
                             is_ecall ||
@@ -141,6 +155,9 @@ module zicsr (
         12'h140: read_data = sscratch;
         12'h141: read_data = sepc;
         12'h142: read_data = scause;
+
+        // Supervisor Protection and Translation
+        12'h180: read_data = satp;
 
         // Machine information registers
         12'hf11: read_data = mvendorid;
@@ -202,7 +219,7 @@ module zicsr (
 
       // Machine trap registers
       //mstatus <= 32'b0;
-      misa <= 32'b0;
+      misa <= 1'b1 << 30 | 1'b1 << 20 | 1'b1 << 18;
       medeleg <= 32'b0;
       mideleg <= 32'b0;
       mie <= 32'b0;
@@ -257,6 +274,9 @@ module zicsr (
       // Supervisor trap setup
       sstatus <= 32'b0;
       stvec <= 32'b0;
+
+      // Supervisor Protection and Translation
+      satp <= 32'b0;
     end else if (wr_en) begin
       // Machine trap status
       //if (csr == 12'h300)
@@ -294,6 +314,8 @@ module zicsr (
 
       // Supervisor trap handling
       else if (csr == 12'h140) sscratch <= wr_val;
+      // Supervisor Protection and Translation
+      else if (csr == 12'h180) satp <= wr_val;
     end
   end
 
@@ -317,6 +339,9 @@ module zicsr (
         trap_ld_access_fault: mcause <= 5;
         trap_st_amo_addr_misaligned: mcause <= 6;
         trap_st_amo_access_fault: mcause <= 7;
+        (is_ecall && priv_mode == 3'b00): mcause <= 8;
+        (is_ecall && priv_mode == 3'b01): mcause <= 9;
+        (is_ecall && priv_mode == 3'b11): mcause <= 11;
         (wr_en && csr == 12'h342): mcause <= wr_val;
         default: mcause <= mcause;
       endcase
@@ -327,26 +352,6 @@ module zicsr (
     if (~rst_n) mtval <= 32'b0;
     else begin
       case (1'b1)
-        trap_instr_addr_misaligned: mtval <= pc;
-        trap_illegal_instr: mtval <= pc;
-        (is_ebreak && priv_mode == 3'b11): mtval <= pc;
-        trap_ld_addr_misaligned: mtval <= mem_addr;
-        trap_ld_access_fault: mtval <= mem_addr;
-        trap_st_amo_addr_misaligned: mtval <= mem_addr;
-        trap_st_amo_access_fault: mtval <= mem_addr;
-        (wr_en && csr == 12'h343): mtval <= wr_val;
-        default: mtval <= mtval;
-      endcase
-    end
-  end
-
-  always @(posedge clk or negedge rst_n) begin
-    if (~rst_n) mtval <= 32'b0;
-    else begin
-      case (1'b1)
-        trap_instr_addr_misaligned: mtval <= pc;
-        trap_illegal_instr: mtval <= instr;
-        (is_ebreak && priv_mode == 3'b11): mtval <= pc;
         trap_ld_addr_misaligned: mtval <= mem_addr;
         trap_ld_access_fault: mtval <= mem_addr;
         trap_st_amo_addr_misaligned: mtval <= mem_addr;
@@ -379,8 +384,10 @@ module zicsr (
   always @(posedge clk or negedge rst_n) begin
     if (~rst_n) begin
       priv_mode <= 2'b11;
-    end else if (exception_occurred) priv_mode <= 2'b11;
-    else if (is_mret) priv_mode <= mstatus[12:11];
+    end else if (exception_occurred) begin
+      if (priv_mode != 2'b11 && medelegated) priv_mode <= 2'b01;
+      else priv_mode <= 2'b11;
+    end else if (is_mret) priv_mode <= mstatus[12:11];
     else if (is_sret) priv_mode <= {1'b0, mstatus[8]};
   end
   // Read logic
