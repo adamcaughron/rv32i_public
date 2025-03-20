@@ -3,7 +3,7 @@
 set -e
 
 
-if [ ! -n "$1" ]; then
+if [[ ! -n "$1" || "$1" == "all_tests" || "$1" == "+rvfi_ext" ]]; then
   # Currently, the full test list in a generated .sv file (all_riscv_tests.sv), so need to generate it prior to elaboration for now.
   # The test collateral (.hex files) will be generated at runtime, due to the "--filelist-only" switch below
   sail_riscv_install_path="../TestRIG/riscv-implementations/sail-riscv/test/riscv-tests/"

@@ -55,6 +55,15 @@ void rvfi_dii_client_thread(int num_tests) {
                              "manual --implementation-B-port " +
                              std::to_string(rvfi_dii_portnum) +
                              " --no-shrink --no-save --test-len 10000";
+
+  // locate sail-riscv executable:
+  const char *sail_env_var = std::getenv("SAIL_RISCV");
+  if (sail_env_var != nullptr) {
+    std::string sail_riscv_path =
+        std::string(sail_env_var) + "/build/c_emulator/";
+    test_rig_cmd += " --path-to-sail-riscv-dir " + sail_riscv_path;
+  }
+
   if (num_tests) {
     test_rig_cmd += " -n " + std::to_string(num_tests);
   }

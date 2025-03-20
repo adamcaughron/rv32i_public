@@ -201,8 +201,20 @@ static void signalHandler(int signum) {
 }
 
 static void rvfi_ext_server_thread(std::string elf_file) {
-  std::string sail_emu = "../sail-riscv/build/"
-                         "c_emulator/riscv_sim_rv32d";
+  // locate sail-riscv executable:
+  const char *sail_env_var = std::getenv("SAIL_RISCV");
+  std::string sail_riscv_path =
+      (sail_env_var != nullptr) ? std::string(sail_env_var) : "../sail-riscv/";
+
+  std::string sail_emu =
+      sail_riscv_path + "/build/" + "c_emulator/riscv_sim_rv32d";
+  /*
+     -C   --disable-compressed
+     -I   --disable-writable-misa
+     -F   --disable-fdext
+     -W   --disable-vector-ext
+  */
+  sail_emu += " -C -I -F -W ";
 
   std::string sail_riscv_cmd = sail_emu + " -Vinstr -Vreg -Vmem -Vplatform " +
                                " -e " + std::to_string(rvfi_ext_portnum) +

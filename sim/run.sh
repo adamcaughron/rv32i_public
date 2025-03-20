@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Set up environment
-WAVE_FILE=waves.mxd
+WAVE_FILE=waves.vcd
 set -e
 
 dsim_cmd="dsim -top work.rv32i_tb -L dut +acc+b -waves $WAVE_FILE -sv_lib ../testbench/dpi/rv32i_tb.so"
@@ -31,5 +31,6 @@ else
   dsim_cmd="$dsim_cmd +all_tests"
 fi
 
+echo $dsim_cmd
 eval $dsim_cmd
 
