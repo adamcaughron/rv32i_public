@@ -19,6 +19,8 @@ reg [31:0] nxt_pc_w_trap;
 reg [31:0] ld_data;
 reg [31:0] csr_read_data;
 reg invalid_csr;
+wire machine_interrupt;
+wire supervisor_interrupt;
 wire medelegated;
 
 wire dec_err;
@@ -85,6 +87,7 @@ wire is_and;
     // MISC-MEM
 wire is_fence;
 wire is_fence_tso;
+wire is_sfence_vma;
 wire is_pause;
 
     // SYSTEM
@@ -92,6 +95,7 @@ wire is_ecall;
 wire is_ebreak;
 wire is_mret;
 wire is_sret;
+wire is_wfi;
 
    // CSR
 wire is_csrrw;
@@ -109,6 +113,17 @@ always @(posedge clk)
     else
         pc <= nxt_pc_w_trap;
 
+reg wfi_pending;
+wire wfi_clear = |(i_zicsr.mip & i_zicsr.mie) || |(i_zicsr.sip & i_zicsr.sie);
+always @(posedge clk or negedge rst_n)
+    if (~rst_n)
+        wfi_pending <= 0;
+    else if (wfi_clear)
+        wfi_pending <= 0;
+    else
+        wfi_pending <= is_wfi;
+
+
 // NEXT PC COMPUTATION
 assign nxt_seq_pc = pc + 3'b100;
 assign nxt_pc = {
@@ -120,11 +135,13 @@ assign nxt_pc = {
         // this would be later in pipelined operation:
         is_jalr ? {({1'b0, rs1_val} + $signed(imm))&~(32'b1)}[31:0] :
         is_mret ? i_zicsr.mepc :
-        is_sret ? i_zicsr.sepc : nxt_seq_pc } [31:0];
+        is_sret ? i_zicsr.sepc :
+        (is_wfi || wfi_pending) && ~wfi_clear ? pc : nxt_seq_pc } [31:0];
 
 
-assign nxt_pc_w_trap = instr_trap ? ( !medelegated ? {i_zicsr.mtvec[31:2], 2'b00} :
-                                                     {i_zicsr.stvec[31:2], 2'b00} ) : nxt_pc;
+assign nxt_pc_w_trap = instr_trap        ? ( !medelegated ? {i_zicsr.mtvec[31:2], 2'b00} :
+                                                            {i_zicsr.stvec[31:2], 2'b00} ) :
+                       machine_interrupt ? ( i_zicsr.mi_vector_addr ) : nxt_pc;
 
 
 // INSTRUCTION FETCH
@@ -197,6 +214,7 @@ instr_decode i_instr_decode(
     // MISC-MEM
     .is_fence( is_fence ),
     .is_fence_tso( is_fence_tso ),
+    .is_sfence_vma( is_sfence_vma ),
     .is_pause( is_pause ),
 
     // SYSTEM
@@ -204,6 +222,7 @@ instr_decode i_instr_decode(
     .is_ebreak( is_ebreak ),
     .is_mret( is_mret ),
     .is_sret( is_sret ),
+    .is_wfi( is_wfi ),
 
     // CSR
     .is_csrrw( is_csrrw ),
@@ -222,7 +241,7 @@ regfile i_regfile(
     .rd( rd ),
     .rs1( rs1),
     .rs2( rs2 ),
-    .wr_en( wr_valid && ~instr_trap),  // FIXME no logic in port connections
+    .wr_en( wr_valid && ~instr_trap && ~machine_interrupt  && ~supervisor_interrupt),  // FIXME no logic in port connections
     .wr_data( rd_val ),
     .rd_rs1( rs1_val ),
     .rd_rs2( rs2_val )
@@ -323,8 +342,15 @@ wire trap_instr_addr_misaligned = (is_branch || is_jal || is_jalr) && (|nxt_pc[1
 // 1 - Instruction access fault -- would require implementing Physical Memory Protection CSRs
 
 // 2 - illegal instruction - many
-wire trap_illegal_instr = dec_err || invalid_csr || (i_zicsr.priv_mode != 2'b11 && is_mret) || (i_zicsr.priv_mode == 2'b00 && is_sret) ||
-                          ((is_csrrw || is_csrrwi || is_csrrs || is_csrrsi || is_csrrc || is_csrrci) && !(i_zicsr.priv_mode >= imm[9:8]));
+wire trap_illegal_instr = dec_err ||
+                          invalid_csr ||
+                          (i_zicsr.priv_mode != 2'b11 && is_mret) ||
+                          (i_zicsr.priv_mode == 2'b00 && is_sret) ||
+                          ((is_csrrw || is_csrrwi || is_csrrs || is_csrrsi || is_csrrc || is_csrrci) && !(i_zicsr.priv_mode >= imm[9:8])) ||
+                          (i_zicsr.mstatus[21] && is_wfi) ||
+                          (i_zicsr.mstatus[20] && (is_sfence_vma ||
+                                                  ((is_csrrw || is_csrrwi || is_csrrs || is_csrrsi || is_csrrc || is_csrrci) && i_zicsr.csr==12'h180))) ||
+                          (i_zicsr.mstatus[22] && is_sret);
 
 
 // 3 - breakpoint

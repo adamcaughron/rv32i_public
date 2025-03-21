@@ -4,6 +4,8 @@ module zicsr (
 
     output logic [31:0] read_data,
     output logic invalid_csr,
+    output wire machine_interrupt,
+    output wire supervisor_interrupt,
     output wire medelegated,
 
     input [31:0] write_data,
@@ -99,15 +101,19 @@ module zicsr (
 
   // Supervisor trap setup
   reg [31:0] sstatus;
+  reg [31:0] sie;
   reg [31:0] stvec;
 
   // Supervisor trap handling
   reg [31:0] sscratch;
   reg [31:0] sepc;
   reg [31:0] scause;
+  reg [31:0] sip;
 
   // Supervisor Protection and Translation
   reg [31:0] satp;
+
+  reg [31:0] tselect;
 
 
   // etc...
@@ -136,6 +142,36 @@ module zicsr (
                             trap_st_amo_addr_misaligned ||
                             trap_st_amo_access_fault ;
 
+  wire ssi = |(mip & mie & (1'b1 << 1));
+  wire msi = |(mip & mie & (1'b1 << 3));
+  wire sti = |(mip & mie & (1'b1 << 5));
+  wire mti = |(mip & mie & (1'b1 << 7));
+  wire sei = |(mip & mie & (1'b1 << 9));
+  wire mei = |(mip & mie & (1'b1 << 11));
+  wire coi = |(mip & mie & (1'b1 << 13));
+
+  wire machine_interrupt;
+  assign machine_interrupt = (msi || mti || mei || ssi || sti || sei) && ((mstatus[3] && (priv_mode == 3'b11))) || ((msi || mti || mei) && (priv_mode != 3'b11)); // || (priv_mode != 3'b11)); // && !(|(medeleg & mip & mie));
+
+  wire supervisor_interrupt;
+  assign supervisor_interrupt = (ssi || sti || sei) && (mstatus[1] && (priv_mode == 3'b01)) ; // || (priv_mode != 3'b00)) && (|(medeleg & mip & mie));
+
+  reg [ 3:0] mi_cause_num;
+  reg [31:0] mi_vector_addr;
+  always_comb begin
+    case (1'b1)
+      (ssi):   mi_cause_num = 1;
+      (msi):   mi_cause_num = 3;
+      (sti):   mi_cause_num = 5;
+      (mti):   mi_cause_num = 7;
+      (sei):   mi_cause_num = 9;
+      (mei):   mi_cause_num = 11;
+      (coi):   mi_cause_num = 13;
+      default: mi_cause_num = 0;
+    endcase
+    mi_vector_addr = mtvec[0] ? {mtvec[31:2], 2'b00} + (mi_cause_num << 2) : mtvec;
+  end
+
   // FIXME / TODO - this is not correct vis-a-vis rs1/rd=x0
   assign rd_en = is_csrrw || is_csrrwi || is_csrrs || is_csrrsi || is_csrrc || is_csrrci;
 
@@ -148,13 +184,15 @@ module zicsr (
       invalid_csr = 0;
       case (csr)
         // Supervisor trap setup
-        12'h100: read_data = sstatus;
+        12'h100: read_data = mstatus;
+        12'h104: read_data = sie;
         12'h105: read_data = stvec;
 
         // Supervisor trap handling
         12'h140: read_data = sscratch;
         12'h141: read_data = sepc;
         12'h142: read_data = scause;
+        12'h144: read_data = sip;
 
         // Supervisor Protection and Translation
         12'h180: read_data = satp;
@@ -191,6 +229,8 @@ module zicsr (
         12'h31a: read_data = menvcfgh;
         12'h747: read_data = mseccfg;
         12'h757: read_data = mseccfgh;
+
+        12'h7a0: read_data = tselect;
         default: begin
           read_data   = 32'hx;
           invalid_csr = 1;
@@ -273,10 +313,14 @@ module zicsr (
 
       // Supervisor trap setup
       sstatus <= 32'b0;
+      sie <= 32'b0;
       stvec <= 32'b0;
+      sip <= 32'b0;
 
       // Supervisor Protection and Translation
       satp <= 32'b0;
+
+      tselect <= 32'b0;
     end else if (wr_en) begin
       // Machine trap status
       //if (csr == 12'h300)
@@ -309,24 +353,49 @@ module zicsr (
       else if (csr == 12'h757) mseccfgh <= wr_val;
 
       // Supervisor trap setup
-      else if (csr == 12'h100) sstatus <= wr_val;
+      //else if (csr == 12'h100) sstatus <= wr_val;
+      else if (csr == 12'h104) sie <= wr_val;
       else if (csr == 12'h105) stvec <= wr_val;
 
       // Supervisor trap handling
       else if (csr == 12'h140) sscratch <= wr_val;
+      else if (csr == 12'h144) sip <= wr_val;
       // Supervisor Protection and Translation
       else if (csr == 12'h180) satp <= wr_val;
+
+      else if (csr == 12'h7a0) tselect <= ~wr_val;  // ?????
     end
   end
 
   always @(posedge clk or negedge rst_n) begin
     if (~rst_n) mstatus <= 32'b0;
-    else if (exception_occurred) mstatus[12:11] <= priv_mode;
-    else if (is_mret) mstatus[12:11] <= 2'b00;
-    else if (is_sret) mstatus[8] <= 1'b0;
-    else if (wr_en && csr == 12'h300) mstatus <= wr_val;
-    else mstatus <= mstatus;
+    else if ((exception_occurred & !medelegated) || machine_interrupt) begin
+      mstatus[12:11] <= priv_mode;  // MPP
+      mstatus[7] <= mstatus[3];  // MPIE
+      mstatus[3] <= 1'b0;  // MIE
+
+    end else if (is_mret) begin
+      mstatus[12:11] <= 2'b00;
+      mstatus[7] <= 1'b1;  // MPIE
+      mstatus[3] <= mstatus[7];  // MIE
+    end else if (is_sret) mstatus[8] <= 1'b0;
+    else if (wr_en && (csr == 12'h300)) mstatus <= wr_val;
+    else if (wr_en && (csr == 12'h100)) begin
+      mstatus[1] <= wr_val[1];
+      mstatus[5] <= wr_val[5];
+      mstatus[6] <= wr_val[6];
+      mstatus[8] <= wr_val[8];  // ?????
+      mstatus[10:9] <= wr_val[10:9];
+      mstatus[14:13] <= wr_val[14:13];
+      mstatus[16:15] <= wr_val[16:15];
+      mstatus[18] <= wr_val[18];
+      mstatus[19] <= wr_val[19];
+      mstatus[31] <= wr_val[31];
+    end else mstatus <= mstatus;
   end
+  //
+  // Supervisor trap setup
+  //else if (csr == 12'h100) sstatus <= wr_val;
 
   always @(posedge clk or negedge rst_n) begin
     if (~rst_n) mcause <= 32'b0;
@@ -387,6 +456,8 @@ module zicsr (
     end else if (exception_occurred) begin
       if (priv_mode != 2'b11 && medelegated) priv_mode <= 2'b01;
       else priv_mode <= 2'b11;
+    end else if (machine_interrupt) begin
+      priv_mode <= 2'b11;
     end else if (is_mret) priv_mode <= mstatus[12:11];
     else if (is_sret) priv_mode <= {1'b0, mstatus[8]};
   end
