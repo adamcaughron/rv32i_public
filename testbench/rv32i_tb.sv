@@ -5,6 +5,7 @@ import "DPI-C" function void finalize_rvfi_dii();
 
 import "DPI-C" function void initialize_rvfi_ext();
 import "DPI-C" function void finalize_rvfi_ext();
+import "DPI-C" function int rvfi_ext_get_mismatch_count();
 
 import "DPI-C" function void initialize_sail_ref_model(string);
 import "DPI-C" function void finalize_sail_ref_model();
@@ -133,31 +134,35 @@ module rv32i_tb ();
       rst_n = 1;
   endtask
 
-  task poll_for_test_completion(string test_name);
+  task poll_for_test_completion(string test_name, output string result);
      // Polling for test pass/fail
     repeat(5000) begin
          @(posedge clk)
          if (i_rv32i_core.is_ecall) begin
-             if (i_rv32i_core.i_regfile.data[3] == 32'b01)
+             if (i_rv32i_core.i_regfile.data[3] == 32'b01) begin
                  $display("%s result: TEST PASS", test_name);
-             else
+                 result = "PASS";
+             end else begin
                  $display("%s result: TEST FAIL <--!!!!!", test_name);
+                 result = "FAIL";
+             end
              return;
          end
     end
     $display("%s result: TEST TIMEOUT <--!!!!!", test_name);
+    result = "TIMEOUT";
   endtask
 
-  task run_test(string test_name);
+  task run_test(string test_name, output string result);
     load_test(test_name);
     halt = 0;
     reset_pulse();
-    poll_for_test_completion(test_name);
+    poll_for_test_completion(test_name, result);
     halt = 1;
     @(posedge clk);
   endtask
 
-  task execute_elf_test(string elf_file);
+  task execute_elf_test(string elf_file, output string result);
     string hex_mem_file;
 
     if ($test$plusargs("rvfi_ext")) begin
@@ -167,7 +172,7 @@ module rv32i_tb ();
     end
 
     hex_mem_file = elf_to_hex(elf_file);
-    run_test(hex_mem_file);
+    run_test(hex_mem_file, result);
 
     if (rvfi_ext_enable) begin
         $display("execute_elf_test calling finalize_sail_ref_model");
@@ -208,27 +213,51 @@ module rv32i_tb ();
 
     if (test_arg != "") begin
         string test_hex_file;
+        string result;
         $display("test name is %s", test_name);
 
         // check for .hex extension, add it if needed:
         if (test_extension.tolower() == "elf") begin
             //test_hex_file = elf_to_hex(test_arg);
-            execute_elf_test(test_arg);
+            execute_elf_test(test_arg, result);
         end else begin
            rvfi_dii_enable = 0;
            $display("Running test %s (from \"test\" commandline arg)", test_name);
-           run_test(test_arg);
+           run_test(test_arg, result);
        end
        $finish;
     end else if ($test$plusargs("all_tests")) begin
+        string test_results[string];
+        int test_ext_mismatches[string];
+        static int max_testname_len = 0;
         string elf_file;
         rvfi_dii_enable = 0;
+
         $display("Running all tests...");
         for (int j=0; j<all_tests.size(); j++) begin
+            string result;
             $display("Test %d: %s", j, all_tests[j]);
             elf_file = get_elf_from_test_name(all_tests[j]);
-            execute_elf_test(elf_file);
+            max_testname_len = elf_file.len() > max_testname_len ? elf_file.len() : max_testname_len;
+            execute_elf_test(elf_file, result);
+
+            test_results[all_tests[j]] = result;
+            if ($test$plusargs("rvfi_ext"))
+                test_ext_mismatches[all_tests[j]] = rvfi_ext_get_mismatch_count();
         end
+
+        for (int j=0; j<all_tests.size(); j++) begin
+            int num_mismatches;
+            elf_file = get_elf_from_test_name(all_tests[j]);
+            elf_file = {elf_file, {(max_testname_len - elf_file.len()){" "}}};
+            if ($test$plusargs("rvfi_ext"))
+               num_mismatches = test_ext_mismatches[all_tests[j]];
+            else
+               num_mismatches = 0;
+            $display("Test %d: %s: result: %s: trace mismatches: %d", j, elf_file, test_results[all_tests[j]], num_mismatches);
+        end
+
+
         $finish;
     end else if ($test$plusargs("dii")) begin
         automatic int portnum = 0;

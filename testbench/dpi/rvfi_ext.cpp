@@ -32,6 +32,7 @@ std::queue<RVFI_DII_Execution_Packet_Ext_MemAccess> rvfi_ext_ext_memdata_q;
 
 std::mutex rvfi_ext_mtx;
 bool trace_done;
+int mismatch_count;
 
 extern "C" void compare_rvfi_ext_execution_packetv2(uint64_t time) {
   std::lock_guard<std::mutex> lock(rvfi_ext_mtx);
@@ -56,6 +57,7 @@ extern "C" void compare_rvfi_ext_execution_packetv2(uint64_t time) {
               << std::endl
               << "\tref: PC = 0x" << std::hex << ref.pc_data.rvfi_pc_rdata
               << std::endl;
+    mismatch_count++;
   }
 
   if (dut.pc_data.rvfi_pc_wdata != ref.pc_data.rvfi_pc_wdata) {
@@ -65,6 +67,7 @@ extern "C" void compare_rvfi_ext_execution_packetv2(uint64_t time) {
               << std::endl
               << "\tref: PC = 0x" << std::hex << ref.pc_data.rvfi_pc_wdata
               << std::endl;
+    mismatch_count++;
   }
 
   // Compare instruction meta data
@@ -83,6 +86,7 @@ extern "C" void compare_rvfi_ext_execution_packetv2(uint64_t time) {
               << std::endl
               << "\tref: rvfi_insn = " << std::hex << ref.basic_data.rvfi_insn
               << std::endl;
+    mismatch_count++;
   }
   if (dut.basic_data.rvfi_trap != ref.basic_data.rvfi_trap) {
     std::cout << "rvfi_trap mismatch at t=" << std::dec << time << ": (PC=0x"
@@ -91,6 +95,7 @@ extern "C" void compare_rvfi_ext_execution_packetv2(uint64_t time) {
               << (int)dut.basic_data.rvfi_trap << std::endl
               << "\tref: rvfi_trap = " << std::hex
               << (int)ref.basic_data.rvfi_trap << std::endl;
+    mismatch_count++;
   }
   if (dut.basic_data.rvfi_halt != ref.basic_data.rvfi_halt) {
     std::cout << "rvfi_halt mismatch at t=" << std::dec << time << ": (PC=0x"
@@ -99,6 +104,7 @@ extern "C" void compare_rvfi_ext_execution_packetv2(uint64_t time) {
               << (int)dut.basic_data.rvfi_halt << std::endl
               << "\tref: rvfi_halt = " << std::hex
               << (int)ref.basic_data.rvfi_halt << std::endl;
+    mismatch_count++;
   }
   if (dut.basic_data.rvfi_intr != ref.basic_data.rvfi_intr) {
     std::cout << "rvfi_intr mismatch at t=" << std::dec << time << ": (PC=0x"
@@ -107,6 +113,7 @@ extern "C" void compare_rvfi_ext_execution_packetv2(uint64_t time) {
               << (int)dut.basic_data.rvfi_intr << std::endl
               << "\tref: rvfi_intr = " << std::hex
               << (int)ref.basic_data.rvfi_intr << std::endl;
+    mismatch_count++;
   }
   if (dut.basic_data.rvfi_mode != ref.basic_data.rvfi_mode) {
     std::cout << "rvfi_mode mismatch at t=" << std::dec << time << ": (PC=0x"
@@ -115,6 +122,7 @@ extern "C" void compare_rvfi_ext_execution_packetv2(uint64_t time) {
               << (int)dut.basic_data.rvfi_mode << std::endl
               << "\tref: rvfi_mode = " << std::hex
               << (int)ref.basic_data.rvfi_mode << std::endl;
+    mismatch_count++;
   }
   if (dut.basic_data.rvfi_ixl != ref.basic_data.rvfi_ixl) {
     std::cout << "rvfi_ixl mismatch at t=" << std::dec << time << ": (PC=0x"
@@ -123,6 +131,7 @@ extern "C" void compare_rvfi_ext_execution_packetv2(uint64_t time) {
               << (int)dut.basic_data.rvfi_ixl << std::endl
               << "\tref: rvfi_ixl = " << std::hex
               << (int)ref.basic_data.rvfi_ixl << std::endl;
+    mismatch_count++;
   }
   // if (dut.basic_data.rvfi_valid != ref.basic_data.rvfi_valid) {
   //    std::cout << "rvfi_valid mismatch: (PC=0x" << std::hex <<
@@ -142,6 +151,7 @@ extern "C" void compare_rvfi_ext_execution_packetv2(uint64_t time) {
                 << (int)dut.integer_data_available << std::endl
                 << "\tref: integer_data_available = " << std::hex
                 << (int)ref.integer_data_available << std::endl;
+      mismatch_count++;
     } else {
     }
   }
@@ -154,6 +164,7 @@ extern "C" void compare_rvfi_ext_execution_packetv2(uint64_t time) {
                 << (int)dut.memory_access_data_available << std::endl
                 << "\tref: memory_access_data_available = " << std::hex
                 << (int)ref.memory_access_data_available << std::endl;
+      mismatch_count++;
     } else {
     }
   }
@@ -429,8 +440,10 @@ int find_available_port() {
 
 extern "C" {
 
-void initialize_rvfi_ext() {}
+void initialize_rvfi_ext() {mismatch_count = 0;}
 void finalize_rvfi_ext() {}
+
+int rvfi_ext_get_mismatch_count() { return mismatch_count; }
 
 void initialize_sail_ref_model(char *elf_file) {
   std::cout << "In main of %s" << __FILE__ << std::endl;
