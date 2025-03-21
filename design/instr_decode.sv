@@ -70,6 +70,7 @@ module instr_decode (
     // MISC-MEM
     output is_fence,
     output is_fence_tso,
+    output is_sfence_vma,
     output is_pause,
 
     // SYSTEM
@@ -77,6 +78,7 @@ module instr_decode (
     output is_ebreak,
     output is_mret,
     output is_sret,
+    output is_wfi,
 
     // CSR
     output is_csrrw,
@@ -209,6 +211,7 @@ module instr_decode (
   // MISC-MEM
   assign is_fence = is_misc_mem && (funct3 == 3'b000 || funct3 == 3'b001);
   assign is_fence_tso = is_misc_mem && funct3 == 3'b000 && rd == 5'b00000 && rs1 == 5'b00000 && instr[31:20] == 12'b100000110011;
+  assign is_sfence_vma = valid_32b_instr && opcode == 5'b11100 && funct3 == 3'b000 && rd == 5'b00000 && funct7 == 7'b0001001;
   assign is_pause = is_misc_mem && funct3 == 3'b000 && rd == 5'b00000 && rs1 == 5'b00000 && instr[31:20] == 12'b000000010000;
 
   // SYSTEM
@@ -216,6 +219,7 @@ module instr_decode (
   assign is_ebreak = is_system && funct3 == 3'b000 && rd == 5'b00000 && rs1 == 5'b00000 && instr[31:20] == 12'b000000000001;
   assign is_mret = is_system && funct3 == 3'b000 && rd == 5'b00000 && rs1 == 5'b00000 && rs2 == 5'b00010 && funct7 == 7'b0011000;
   assign is_sret = is_system && funct3 == 3'b000 && rd == 5'b00000 && rs1 == 5'b00000 && rs2 == 5'b00010 && funct7 == 7'b0001000;
+  assign is_wfi = is_system && funct3 == 3'b000 && rd == 5'b00000 && rs1 == 5'b00000 && rs2 == 5'b00101 && funct7 == 7'b0001000;
 
   // CSR
   assign is_csrrw = is_system && funct3 == 3'b001;
@@ -255,7 +259,7 @@ module instr_decode (
                sel_i_type_imm ? i_type_imm :
                sel_s_type_imm ? s_type_imm : {32{1'bx}};
 
-  assign wr_valid = is_lui || is_auipc || is_jal || is_jalr || is_load || is_op_imm || is_op || is_fence ||
+  assign wr_valid = is_lui || is_auipc || is_jal || is_jalr || is_load || is_op_imm || is_op ||
                   is_csrrw || is_csrrwi || is_csrrs || is_csrrsi || is_csrrc || is_csrrci;
 
   assign dec_err = instr[1:0] != 2'b11 || ~(
@@ -299,11 +303,13 @@ module instr_decode (
     is_and ||
     is_fence ||
     is_fence_tso ||
+    is_sfence_vma ||
     is_pause ||
     is_ecall ||
     is_ebreak ||
     is_mret ||
     is_sret ||
+    is_wfi ||
     is_csrrw ||
     is_csrrs ||
     is_csrrc ||

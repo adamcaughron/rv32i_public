@@ -19,11 +19,8 @@ exclude_test_patterns = [
     "-fm",
     "-lrsc",
     "rv64",
-    "rv32mi-p-breakpoint",
-    "rv32mi-p-illegal",
     "rv32si-p-dirty",
     "rv32si-p-ma_fetch",
-    "rv32si-p-wfi",
 ]
 
 include_test_patterns = ["rv32ui", "rv32mi", "rv32si"]

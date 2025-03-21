@@ -43,7 +43,7 @@ module rv32i_dii(input rvfi_ext_enable, input rvfi_dii_enable, input halt);
        if (rvfi_ext_enable && ~halt) begin
            if (rv32i_core.rst_n) begin
               rvfi_set_pc_data(rv32i_core.pc, rv32i_core.nxt_pc_w_trap);
-              rvfi_set_inst_meta_data(rv32i_core.instr, rv32i_core.instr_trap, 0, 0, rv32i_core.i_zicsr.priv_mode, 1, ~rv32i_core.dec_err & 1'b1);
+              rvfi_set_inst_meta_data(rv32i_core.instr, (rv32i_core.instr_trap || rv32i_core.machine_interrupt & ~rv32i_core.is_wfi), 0, 0, rv32i_core.i_zicsr.priv_mode, 1, ~rv32i_core.dec_err & 1'b1);
 
               if (integer_data_available)
                   rvfi_set_ext_integer_data(rv32i_core.rd_val, rs1_val, (rv32i_core.rs2_val & {32{~rv32i_core.i_instr_decode.is_op_imm}}), rv32i_core.rd, rs1 , (rv32i_core.rs2 & {5{~(rv32i_core.i_instr_decode.sel_u_type_imm || rv32i_core.i_instr_decode.sel_i_type_imm || rv32i_core.i_instr_decode.sel_modified_i_type_imm)}}));

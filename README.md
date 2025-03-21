@@ -20,8 +20,8 @@ The testbench supports the following modes of operation:
 Verification status:
 - Many of the self-checking tests from the [sail-riscv](https://github.com/riscv/sail-riscv/tree/master/test/riscv-tests) repo are passing:
   - All 39 `"rv32ui-p-*"` tests are passing
-  - 7 out of 9 `"rv32mi-p-*"` tests are passing. (`rv32mi-p-breakpoint` and `rv32mi-p-illegal` yet to pass.)
-  - 3 out of 6 `"rv32si-p-*"` tests are passing. (`rv32si-p-dirty`, `rv32si-p-ma_fetch`, and `rv32si-p-wfi` are yet to pass.)
+  - All 9 `"rv32mi-p-*"` tests are passing
+  - 4 out of 6 `"rv32si-p-*"` tests are passing. (`rv32si-p-dirty` and `rv32si-p-ma_fetch` are yet to pass.)
 - Tens of thousands of random instruction streams match against the `sail-riscv` reference model via testing with `TestRIG` and `QCVengine` generator
 
 Getting Started
