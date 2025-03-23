@@ -18,6 +18,8 @@
 #include "rvfi_ext.h"
 #include "rvfi_types.h"
 
+#include "rv32i_tb_exports.h"
+
 std::thread rvfi_ext_server;
 std::thread rvfi_ext_client;
 
@@ -33,6 +35,8 @@ std::queue<RVFI_DII_Execution_Packet_Ext_MemAccess> rvfi_ext_ext_memdata_q;
 std::mutex rvfi_ext_mtx;
 bool trace_done;
 int mismatch_count;
+int discarded_insts;
+extern int rvfi_order;
 
 extern "C" void compare_rvfi_ext_execution_packetv2(uint64_t time) {
   std::lock_guard<std::mutex> lock(rvfi_ext_mtx);
@@ -65,6 +69,16 @@ extern "C" void compare_rvfi_ext_execution_packetv2(uint64_t time) {
   //  rvfi_ext_exec_packet_q.pop();
   //  return;
   //}
+
+  if ((dut.basic_data.rvfi_order) != ref.basic_data.rvfi_order) {
+    std::cout << "rvfi_order mismatch: (PC=0x" << std::hex <<
+    dut.pc_data.rvfi_pc_rdata << "):" << std::endl <<
+           "\tDUT: rvfi_order = " << std::dec <<
+           ((int)dut.basic_data.rvfi_order) << std::endl <<
+           "\tref: rvfi_order = " << std::dec <<
+           (int)ref.basic_data.rvfi_order << std::endl;
+    mismatch_count++;
+  }
 
   // Compare PC
   if (dut.pc_data.rvfi_pc_rdata != ref.pc_data.rvfi_pc_rdata) {
@@ -487,9 +501,12 @@ static void rvfi_ext_client_thread() {
   } while (1);
 
   // Discard trace packets up to the elf entry point:
+  discarded_insts = 0;
   do {
     discard_read();
+    discarded_insts++;
   } while (sail_rvfi_ext_packet->pc_data.rvfi_pc_wdata != 0x80000000);
+  rvfi_order = discarded_insts;
 
   std::cout << "rvfi_ext_client_thread: Connected to server port "
             << rvfi_ext_portnum << "..." << std::endl;
@@ -607,7 +624,10 @@ int find_available_port() {
 
 extern "C" {
 
-void initialize_rvfi_ext() { mismatch_count = 0; }
+void initialize_rvfi_ext() {
+  mismatch_count = 0;
+  rvfi_order = 0;
+}
 void finalize_rvfi_ext() {}
 
 int rvfi_ext_get_mismatch_count() { return mismatch_count; }
@@ -638,6 +658,15 @@ void initialize_sail_ref_model(char *elf_file) {
       break;
     }
   } while (1);
+
+  svScope tb_scope = svGetScopeFromName("rv32i_tb.i_rv32i_core.i_rv32i_dii");
+  if (tb_scope) {
+    svSetScope(tb_scope);
+    set_rvfi_order(discarded_insts);
+  } else {
+    perror("Weren't able to get the scope of rv32i_tb.i_rv32i_core.i_rv32i_dii");
+    exit(EXIT_FAILURE);
+  }
 }
 
 void finalize_sail_ref_model() {

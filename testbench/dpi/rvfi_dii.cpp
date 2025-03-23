@@ -508,6 +508,7 @@ void rvfi_set_inst_meta_data(uint64_t rvfi_inst, uint8_t rvfi_trap,
   printf("\t rvfi_valid: 0x%01x\n", rvfi_valid);
   */
 
+  dut_rvfi_ext_packet.basic_data.rvfi_order = rvfi_order;
   dut_rvfi_ext_packet.basic_data.rvfi_insn = rvfi_inst;
   dut_rvfi_ext_packet.basic_data.rvfi_trap = rvfi_trap;
   dut_rvfi_ext_packet.basic_data.rvfi_halt = rvfi_halt;
@@ -515,6 +516,9 @@ void rvfi_set_inst_meta_data(uint64_t rvfi_inst, uint8_t rvfi_trap,
   dut_rvfi_ext_packet.basic_data.rvfi_mode = rvfi_mode;
   dut_rvfi_ext_packet.basic_data.rvfi_ixl = rvfi_ixl;
   dut_rvfi_ext_packet.basic_data.rvfi_valid = rvfi_valid;
+
+  if (!rvfi_trap && !rvfi_intr)
+    rvfi_order++;
 }
 
 void rvfi_set_pc_data(uint64_t pc_rdata, uint64_t pc_wdata) {

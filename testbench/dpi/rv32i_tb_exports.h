@@ -12,6 +12,7 @@ void finalize_rvfi_dii();
 void do_halt();
 int do_unhalt();
 void do_queue_finish();
+void set_rvfi_order(int);
 
 #ifdef __cplusplus
 }
