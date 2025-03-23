@@ -49,6 +49,23 @@ extern "C" void compare_rvfi_ext_execution_packetv2(uint64_t time) {
     return;
   }
 
+  // Sail model never sets valid...
+  // if (dut.basic_data.rvfi_valid != ref.basic_data.rvfi_valid) {
+  //   std::cout << "rvfi_valid mismatch: (PC=0x" << std::hex <<
+  //   dut.pc_data.rvfi_pc_rdata << "):" << std::endl <<
+  //          "\tDUT: rvfi_valid = " << std::hex <<
+  //          (int)dut.basic_data.rvfi_valid << std::endl <<
+  //          "\tref: rvfi_valid = " << std::hex <<
+  //          (int)ref.basic_data.rvfi_valid << std::endl;
+  //}
+
+  // if (!ref.basic_data.rvfi_valid) {
+  //  //rvfi_ext_ext_integer_q.pop();
+  //  //rvfi_ext_ext_memdata_q.pop();
+  //  rvfi_ext_exec_packet_q.pop();
+  //  return;
+  //}
+
   // Compare PC
   if (dut.pc_data.rvfi_pc_rdata != ref.pc_data.rvfi_pc_rdata) {
     std::cout << "-E- at t=" << std::dec << time
@@ -133,40 +150,190 @@ extern "C" void compare_rvfi_ext_execution_packetv2(uint64_t time) {
               << (int)ref.basic_data.rvfi_ixl << std::endl;
     mismatch_count++;
   }
-  // if (dut.basic_data.rvfi_valid != ref.basic_data.rvfi_valid) {
-  //    std::cout << "rvfi_valid mismatch: (PC=0x" << std::hex <<
-  //    dut.pc_data.rvfi_pc_rdata << "):" << std::endl <<
-  //           "\tDUT: rvfi_valid = " << std::hex <<
-  //           (int)dut.basic_data.rvfi_valid << std::endl <<
-  //           "\tref: rvfi_valid = " << std::hex <<
-  //           (int)ref.basic_data.rvfi_valid << std::endl;
-  //}
 
-  if (dut.integer_data_available || ref.integer_data_available) {
-    if (dut.integer_data_available ^ ref.integer_data_available) {
-      std::cout << "-E- integer data available mistmatch at t=" << std::dec
-                << time << ": (PC=0x" << std::hex << dut.pc_data.rvfi_pc_rdata
+  if (dut.integer_data_available ^ ref.integer_data_available) {
+    std::cout << "-E- integer data available mistmatch at t=" << std::dec
+              << time << ": (PC=0x" << std::hex << dut.pc_data.rvfi_pc_rdata
+              << "):" << std::endl
+              << "\tDUT: integer_data_available = " << std::hex
+              << (int)dut.integer_data_available << std::endl
+              << "\tref: integer_data_available = " << std::hex
+              << (int)ref.integer_data_available << std::endl;
+    mismatch_count++;
+  } else if (dut.integer_data_available && ref.integer_data_available) {
+
+    extern RVFI_DII_Execution_Packet_Ext_Integer exec_ext_integer_data;
+    RVFI_DII_Execution_Packet_Ext_Integer &dut_int = exec_ext_integer_data;
+    RVFI_DII_Execution_Packet_Ext_Integer &ref_int =
+        rvfi_ext_ext_integer_q.front();
+
+    // if (dut_int.rvfi_rd_wdata != ref_int.rvfi_rd_wdata)
+
+    if (dut_int.rvfi_rd_wdata != ref_int.rvfi_rd_wdata) {
+      std::cout << "-E- rvfi_rd_wdata mismatch at t=" << std::dec << time
+                << ": (PC=0x" << std::hex << dut.pc_data.rvfi_pc_rdata
                 << "):" << std::endl
-                << "\tDUT: integer_data_available = " << std::hex
-                << (int)dut.integer_data_available << std::endl
-                << "\tref: integer_data_available = " << std::hex
-                << (int)ref.integer_data_available << std::endl;
+                << "\tDUT: rvfi_rd_wdata = " << std::hex
+                << dut_int.rvfi_rd_wdata << std::endl
+                << "\tref: rvfi_rd_wdata = " << std::hex
+                << ref_int.rvfi_rd_wdata << std::endl;
       mismatch_count++;
-    } else {
     }
+
+    // if (dut_int.rvfi_rs1_rdata != ref_int.rvfi_rs1_rdata) {
+    //    std::cout << "-E- rvfi_rs1_rdata mismatch at t=" << std::dec
+    //              << time << ": (PC=0x" << std::hex <<
+    //              dut.pc_data.rvfi_pc_rdata
+    //              << "):" << std::endl
+    //              << "\tDUT: rvfi_rs1_rdata = " << std::hex
+    //              << dut_int.rvfi_rs1_rdata << std::endl
+    //              << "\tref: rvfi_rs1_rdata = " << std::hex
+    //              << ref_int.rvfi_rs1_rdata << std::endl;
+    //    mismatch_count++;
+    //}
+
+    // if (dut_int.rvfi_rs2_rdata != ref_int.rvfi_rs2_rdata) {
+    //    std::cout << "-E- rvfi_rs2_rdata mismatch at t=" << std::dec
+    //              << time << ": (PC=0x" << std::hex <<
+    //              dut.pc_data.rvfi_pc_rdata
+    //              << "):" << std::endl
+    //              << "\tDUT: rvfi_rs2_rdata = " << std::hex
+    //              << dut_int.rvfi_rs2_rdata << std::endl
+    //              << "\tref: rvfi_rs2_rdata = " << std::hex
+    //              << ref_int.rvfi_rs2_rdata << std::endl;
+    //    mismatch_count++;
+    //}
+
+    if (dut_int.rvfi_rd_addr != ref_int.rvfi_rd_addr) {
+      std::cout << "-E- rvfi_rd_addr mismatch at t=" << std::dec << time
+                << ": (PC=0x" << std::hex << dut.pc_data.rvfi_pc_rdata
+                << "):" << std::endl
+                << "\tDUT: rvfi_rd_addr = " << std::hex
+                << (int)dut_int.rvfi_rd_addr << std::endl
+                << "\tref: rvfi_rd_addr = " << std::hex
+                << (int)ref_int.rvfi_rd_addr << std::endl;
+      mismatch_count++;
+    }
+
+    // if (dut_int.rvfi_rs1_addr != ref_int.rvfi_rs1_addr) {
+    //    std::cout << "-E- rvfi_rs1_addr mismatch at t=" << std::dec
+    //              << time << ": (PC=0x" << std::hex <<
+    //              dut.pc_data.rvfi_pc_rdata
+    //              << "):" << std::endl
+    //              << "\tDUT: rvfi_rs1_addr = " << std::hex
+    //              << (int)dut_int.rvfi_rs1_addr << std::endl
+    //              << "\tref: rvfi_rs1_addr = " << std::hex
+    //              << (int)ref_int.rvfi_rs1_addr << std::endl;
+    //    mismatch_count++;
+    //}
+
+    // if (dut_int.rvfi_rs2_addr != ref_int.rvfi_rs2_addr) {
+    //    std::cout << "-E- rvfi_rs2_addr mismatch at t=" << std::dec
+    //              << time << ": (PC=0x" << std::hex <<
+    //              dut.pc_data.rvfi_pc_rdata
+    //              << "):" << std::endl
+    //              << "\tDUT: rvfi_rs2_addr = " << std::hex
+    //              << (int)dut_int.rvfi_rs2_addr << std::endl
+    //              << "\tref: rvfi_rs2_addr = " << std::hex
+    //              << (int)ref_int.rvfi_rs2_addr << std::endl;
+    //    mismatch_count++;
+    //}
+
+    rvfi_ext_ext_integer_q.pop();
   }
-  if (dut.memory_access_data_available || ref.memory_access_data_available) {
-    if (dut.memory_access_data_available ^ ref.memory_access_data_available) {
-      std::cout << "-E- memory access data available mistmatch at t="
-                << std::dec << time << ": (PC=0x" << std::hex
-                << dut.pc_data.rvfi_pc_rdata << "):" << std::endl
-                << "\tDUT: memory_access_data_available = " << std::hex
-                << (int)dut.memory_access_data_available << std::endl
-                << "\tref: memory_access_data_available = " << std::hex
-                << (int)ref.memory_access_data_available << std::endl;
-      mismatch_count++;
-    } else {
+
+  if (dut.memory_access_data_available ^ ref.memory_access_data_available) {
+    std::cout << "-E- memory access data available mistmatch at t=" << std::dec
+              << time << ": (PC=0x" << std::hex << dut.pc_data.rvfi_pc_rdata
+              << "):" << std::endl
+              << "\tDUT: memory_access_data_available = " << std::hex
+              << (int)dut.memory_access_data_available << std::endl
+              << "\tref: memory_access_data_available = " << std::hex
+              << (int)ref.memory_access_data_available << std::endl;
+    mismatch_count++;
+  } else if (!dut.basic_data.rvfi_trap && dut.memory_access_data_available &&
+             ref.memory_access_data_available) {
+
+    extern RVFI_DII_Execution_Packet_Ext_MemAccess exec_ext_mem_data;
+    RVFI_DII_Execution_Packet_Ext_MemAccess &dut_mem = exec_ext_mem_data;
+    RVFI_DII_Execution_Packet_Ext_MemAccess &ref_mem =
+        rvfi_ext_ext_memdata_q.front();
+
+    uint64_t read_mask = 0;
+    uint64_t write_mask = 0;
+
+    for (int i = 0; i < 8; i++) {
+      if ((ref_mem.rvfi_mem_rmask >> i) & 0x1) {
+        read_mask |= 0xff << (8 * i);
+      }
+
+      if ((ref_mem.rvfi_mem_wmask >> i) & 0x1) {
+        write_mask |= 0xff << (8 * i);
+      }
     }
+
+    if ((dut_mem.rvfi_mem_rdata[0] & read_mask) !=
+        (ref_mem.rvfi_mem_rdata[0] & read_mask)) {
+      std::cout << "-E- rvfi_mem_rdata mismatch at t=" << std::dec << time
+                << ": (PC=0x" << std::hex << dut.pc_data.rvfi_pc_rdata
+                << "):" << std::endl
+                << "\tDUT: rvfi_mem_rdata = " << std::hex
+                << dut_mem.rvfi_mem_rdata << std::endl
+                << "\tref: rvfi_mem_rdata = " << std::hex
+                << ref_mem.rvfi_mem_rdata << std::endl;
+      mismatch_count++;
+    }
+
+    if ((dut_mem.rvfi_mem_wdata[0] & write_mask) !=
+        (ref_mem.rvfi_mem_wdata[0] & write_mask)) {
+      ; //  : 575 .. 320,
+      std::cout << "-E- rvfi_mem_wdata mismatch at t=" << std::dec << time
+                << ": (PC=0x" << std::hex << dut.pc_data.rvfi_pc_rdata
+                << "):" << std::endl
+                << "\tDUT: rvfi_mem_wdata = " << std::hex
+                << dut_mem.rvfi_mem_wdata << std::endl
+                << "\tref: rvfi_mem_wdata = " << std::hex
+                << ref_mem.rvfi_mem_wdata << std::endl;
+      mismatch_count++;
+    }
+
+    if (dut_mem.rvfi_mem_rmask != ref_mem.rvfi_mem_rmask) {
+      ; //  : 607 .. 576,
+      std::cout << "-E- rvfi_mem_rmask mismatch at t=" << std::dec << time
+                << ": (PC=0x" << std::hex << dut.pc_data.rvfi_pc_rdata
+                << "):" << std::endl
+                << "\tDUT: rvfi_mem_rmask = " << std::hex
+                << dut_mem.rvfi_mem_rmask << std::endl
+                << "\tref: rvfi_mem_rmask = " << std::hex
+                << ref_mem.rvfi_mem_rmask << std::endl;
+      mismatch_count++;
+    }
+
+    if (dut_mem.rvfi_mem_wmask != ref_mem.rvfi_mem_wmask) {
+      ; //  : 639 .. 608,
+      std::cout << "-E- rvfi_mem_wmask mismatch at t=" << std::dec << time
+                << ": (PC=0x" << std::hex << dut.pc_data.rvfi_pc_rdata
+                << "):" << std::endl
+                << "\tDUT: rvfi_mem_wmask = " << std::hex
+                << dut_mem.rvfi_mem_wmask << std::endl
+                << "\tref: rvfi_mem_wmask = " << std::hex
+                << ref_mem.rvfi_mem_wmask << std::endl;
+      mismatch_count++;
+    }
+
+    if (dut_mem.rvfi_mem_addr != ref_mem.rvfi_mem_addr) {
+      ; //  : 703 .. 640,
+      std::cout << "-E- rvfi_mem_addr mismatch at t=" << std::dec << time
+                << ": (PC=0x" << std::hex << dut.pc_data.rvfi_pc_rdata
+                << "):" << std::endl
+                << "\tDUT: rvfi_mem_addr = " << std::hex
+                << dut_mem.rvfi_mem_addr << std::endl
+                << "\tref: rvfi_mem_addr = " << std::hex
+                << ref_mem.rvfi_mem_addr << std::endl;
+      mismatch_count++;
+    }
+
+    rvfi_ext_ext_memdata_q.pop();
   }
 
   rvfi_ext_exec_packet_q.pop();
@@ -440,7 +607,7 @@ int find_available_port() {
 
 extern "C" {
 
-void initialize_rvfi_ext() {mismatch_count = 0;}
+void initialize_rvfi_ext() { mismatch_count = 0; }
 void finalize_rvfi_ext() {}
 
 int rvfi_ext_get_mismatch_count() { return mismatch_count; }
