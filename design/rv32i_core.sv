@@ -126,6 +126,7 @@ always @(posedge clk or negedge rst_n)
 
 // NEXT PC COMPUTATION
 assign nxt_seq_pc = pc + 3'b100;
+wire [31:0] jalr_target = {({1'b0, rs1_val} + $signed(imm))}[31:0];
 assign nxt_pc = {
         // this would be later in pipelined operation:
         (alu_output && (is_beq || is_bne ||
@@ -307,8 +308,9 @@ zicsr i_zicsr(
     .invalid_csr( invalid_csr ),
     .csr( imm[11:0] ),
     .pc( pc ),
+    .nxt_pc( nxt_pc ),
     .instr( instr ),
-    .mem_addr( alu_output ),
+    .mem_addr( {2'b00, alu_output} ),
     .is_csrrw( is_csrrw ),
     .is_csrrs( is_csrrs ),
     .is_csrrc( is_csrrc ),

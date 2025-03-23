@@ -12,8 +12,9 @@ module zicsr (
     input [11:0] csr,
 
     input [31:0] pc,
+    input [31:0] nxt_pc,
     input [31:0] instr,
-    input [31:0] mem_addr,
+    input [33:0] mem_addr,
 
     input is_csrrw,
     input is_csrrs,
@@ -108,6 +109,7 @@ module zicsr (
   reg [31:0] sscratch;
   reg [31:0] sepc;
   reg [31:0] scause;
+  reg [31:0] stval;
   reg [31:0] sip;
 
   // Supervisor Protection and Translation
@@ -192,6 +194,7 @@ module zicsr (
         12'h140: read_data = sscratch;
         12'h141: read_data = sepc;
         12'h142: read_data = scause;
+        12'h143: read_data = stval;
         12'h144: read_data = sip;
 
         // Supervisor Protection and Translation
@@ -259,7 +262,7 @@ module zicsr (
 
       // Machine trap registers
       //mstatus <= 32'b0;
-      misa <= 1'b1 << 30 | 1'b1 << 20 | 1'b1 << 18;
+      misa <= 1'b1 << 30 | 1'b1 << 20 | 1'b1 << 18 | 1'b1 << 8;
       medeleg <= 32'b0;
       mideleg <= 32'b0;
       mie <= 32'b0;
@@ -284,8 +287,8 @@ module zicsr (
       mseccfgh <= 32'b0;
 
       // Machine memory protection
-      //pmpcfg [0:15] <= 32'b0;
-      //pmpaddr [0:63] <= 32'b0;
+      for (int i = 0; i < 16; i++) pmpcfg[i] <= 32'b0;
+      for (int i = 0; i < 64; i++) pmpaddr[i] <= 32'b0;
 
       // Machine state enable registers
       mstateen0 <= 32'b0;
@@ -315,6 +318,7 @@ module zicsr (
       sstatus <= 32'b0;
       sie <= 32'b0;
       stvec <= 32'b0;
+      stval <= 32'b0;
       sip <= 32'b0;
 
       // Supervisor Protection and Translation
@@ -359,11 +363,22 @@ module zicsr (
 
       // Supervisor trap handling
       else if (csr == 12'h140) sscratch <= wr_val;
+      else if (csr == 12'h143) stval <= wr_val;
       else if (csr == 12'h144) sip <= wr_val;
       // Supervisor Protection and Translation
       else if (csr == 12'h180) satp <= wr_val;
 
       else if (csr == 12'h7a0) tselect <= ~wr_val;  // ?????
+
+      else if (csr[11:4] == 8'h3a) pmpcfg[csr[3:0]] <= wr_val;
+
+      else if ((csr[11:4] == 8'h3b)) pmpaddr[csr[3:0]] <= wr_val;
+
+      else if ((csr[11:4] == 8'h3c)) pmpaddr[{2'b01, csr[3:0]}] <= wr_val;
+
+      else if ((csr[11:4] == 8'h3d)) pmpaddr[{2'b10, csr[3:0]}] <= wr_val;
+
+      else if ((csr[11:4] == 8'h3e)) pmpaddr[{2'b11, csr[3:0]}] <= wr_val;
     end
   end
 
@@ -421,12 +436,28 @@ module zicsr (
     if (~rst_n) mtval <= 32'b0;
     else begin
       case (1'b1)
+        trap_instr_addr_misaligned: mtval <= rv32i_core.is_jalr ? rv32i_core.jalr_target : nxt_pc;
         trap_ld_addr_misaligned: mtval <= mem_addr;
         trap_ld_access_fault: mtval <= mem_addr;
         trap_st_amo_addr_misaligned: mtval <= mem_addr;
         trap_st_amo_access_fault: mtval <= mem_addr;
         (wr_en && csr == 12'h343): mtval <= wr_val;
         default: mtval <= mtval;
+      endcase
+    end
+  end
+
+  always @(posedge clk or negedge rst_n) begin
+    if (~rst_n) stval <= 32'b0;
+    else if (priv_mode != 2'b11 && medelegated) begin
+      case (1'b1)
+        trap_instr_addr_misaligned: stval <= rv32i_core.is_jalr ? rv32i_core.jalr_target : nxt_pc;
+        trap_ld_addr_misaligned: stval <= mem_addr;
+        trap_ld_access_fault: stval <= mem_addr;
+        trap_st_amo_addr_misaligned: stval <= mem_addr;
+        trap_st_amo_access_fault: stval <= mem_addr;
+        (wr_en && csr == 12'h343): stval <= wr_val;
+        default: stval <= stval;
       endcase
     end
   end
@@ -463,6 +494,52 @@ module zicsr (
   end
   // Read logic
 
+
+  // Physical memory protection address matching
+  reg pmp_addr_match;
+  reg [3:0] pmp_match_ind;
+  reg [31:0] compare_mask;
+  int z;
+  always_comb begin
+    pmp_addr_match = 0;
+    pmp_match_ind = 0;
+    compare_mask = 0;
+    z = 0;
+    for (int i = 0; i < 16; i++) begin
+      //case( pmpcfg[4:3] )
+      //  0: break; //disabled
+      //  1: break; //tor
+      //  2: break; //na4
+      //  3: break; //napot
+      //endcase
+      if (pmpcfg[i][4:3] == 2'b01) begin
+        if (i == 0) pmp_addr_match = mem_addr < pmpaddr[i];
+        else pmp_addr_match = (mem_addr < pmpaddr[i]) && (mem_addr >= pmpaddr[i-1]);
+
+        if (pmp_addr_match) begin
+          pmp_match_ind = i;
+          break;
+        end
+      end else if (pmpcfg[i][4:3] == 2'b10) begin
+        pmp_addr_match = mem_addr[33:2] == pmpaddr[i];
+        if (pmp_addr_match) begin
+          pmp_match_ind = i;
+          break;
+        end
+      end else if (pmpcfg[i][4:3] == 2'b11) begin
+        compare_mask = 1;
+        for (z = 0; z <= 31; z++)
+        if (pmpaddr[i][z]) compare_mask = (compare_mask << 1) | 1'b1;
+        else break;
+
+        pmp_addr_match = &((mem_addr[33:2] ^~ pmpaddr[i][31:0]) | compare_mask);
+        if (pmp_addr_match) begin
+          pmp_match_ind = i;
+          break;
+        end
+      end
+    end
+  end
 
 
 endmodule

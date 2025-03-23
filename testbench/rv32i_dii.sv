@@ -82,7 +82,7 @@ module rv32i_dii(input rvfi_ext_enable, input rvfi_dii_enable, input halt);
                                                                                     rv32i_core.i_instr_decode.is_csrrc ||
                                                                                     rv32i_core.i_instr_decode.is_csrrci);
 
-   assign memory_access_data_available = ~rv32i_core.instr_trap && (rv32i_core.i_instr_decode.is_store || rv32i_core.i_instr_decode.is_load);
+   assign memory_access_data_available = (~rv32i_core.instr_trap || rv32i_core.trap_st_amo_access_fault) && (rv32i_core.i_instr_decode.is_store || rv32i_core.i_instr_decode.is_load);
 
 endmodule
 
