@@ -1,9 +1,9 @@
 module regfile (
     input clk,
     input rst_n,
-    input [5:0] rd,
-    input [5:0] rs1,
-    input [5:0] rs2,
+    input [4:0] rd,
+    input [4:0] rs1,
+    input [4:0] rs2,
     input wr_en,
     input [31:0] wr_data,
     output [31:0] rd_rs1,

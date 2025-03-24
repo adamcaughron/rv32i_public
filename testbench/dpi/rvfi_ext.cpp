@@ -406,7 +406,7 @@ static void rvfi_ext_server_thread(std::string elf_file) {
      -F   --disable-fdext
      -W   --disable-vector-ext
   */
-  sail_emu += " -C -I -F -W ";
+  sail_emu += " -I -F -W ";
 
   std::string sail_riscv_cmd = sail_emu + " -Vinstr -Vreg -Vmem -Vplatform " +
                                " -e " + std::to_string(rvfi_ext_portnum) +

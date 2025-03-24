@@ -262,7 +262,7 @@ module zicsr (
 
       // Machine trap registers
       //mstatus <= 32'b0;
-      misa <= 1'b1 << 30 | 1'b1 << 20 | 1'b1 << 18 | 1'b1 << 8;
+      misa <= 1'b1 << 30 | 1'b1 << 20 | 1'b1 << 18 | 1'b1 << 8 | 1'b1 << 2;
       medeleg <= 32'b0;
       mideleg <= 32'b0;
       mie <= 32'b0;
@@ -329,8 +329,8 @@ module zicsr (
       // Machine trap status
       //if (csr == 12'h300)
       //    mstatus <= wr_val;
-      if (csr == 12'h301) misa <= wr_val;
-      else if (csr == 12'h302) medeleg <= wr_val;
+      //if (csr == 12'h301) misa <= wr_val;
+      if (csr == 12'h302) medeleg <= wr_val;
       else if (csr == 12'h303) mideleg <= wr_val;
       else if (csr == 12'h304) mie <= wr_val;
       else if (csr == 12'h305) mtvec <= wr_val;

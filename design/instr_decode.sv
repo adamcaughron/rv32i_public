@@ -1,9 +1,9 @@
 module instr_decode (
     input [31:0] instr,
     output dec_err,
-    output [5:0] rd,
-    output [5:0] rs1,
-    output [5:0] rs2,
+    output [4:0] rd,
+    output [4:0] rs1,
+    output [4:0] rs2,
     output [31:0] imm,
     output wr_valid,
 
@@ -86,235 +86,373 @@ module instr_decode (
     output is_csrrc,
     output is_csrrwi,
     output is_csrrsi,
-    output is_csrrci
+    output is_csrrci,
+
+    output is_load,
+    output is_store,
+    output is_amo
 );
 
-  // OPERANDS
-  assign rd  = instr[11:7];
-  assign rs1 = instr[19:15];
-  assign rs2 = instr[24:20];
+  reg rv32_dec_err;
+  reg [4:0] rv32_rd;
+  reg [4:0] rv32_rs1;
+  reg [4:0] rv32_rs2;
+  reg [31:0] rv32_imm;
+  reg rv32_wr_valid;
 
-  wire [2:0] funct3 = instr[14:12];
-  wire [6:0] funct7 = instr[31:25];
-
-  wire [4:0] opcode = instr[6:2];
-
-  wire valid_32b_instr = instr[1:0] == 2'b11;
-
-  // 5'b00000 - LOAD
-  wire is_load = valid_32b_instr && opcode == 5'b00000;
-
-  // 5'b01000 - STORE
-  wire is_store = valid_32b_instr && opcode == 5'b01000;
-
-  // 5'b11000 - BRANCH
-  assign is_branch = valid_32b_instr && opcode == 5'b11000;
-
-  // 5'b00011 - MISC-MEM (eg, fence)
-  wire is_misc_mem = valid_32b_instr && opcode == 5'b00011;
-
-  // 5'b00100 - OP-IMM
-  wire is_op_imm = valid_32b_instr && opcode == 5'b00100;
-
-  // 5'b00101 - AUIPC
-  wire is_auipc = valid_32b_instr && opcode == 5'b000101;
-
-  // 5'b01011 - AMO
-  wire is_amo = valid_32b_instr && opcode == 5'b01011;
-
-  // 5'b01100 - OP
-  wire is_op = valid_32b_instr && opcode == 5'b01100;
-
-  // 5'b01101 - LUI
-  wire is_lui = valid_32b_instr && opcode == 5'b01101;
-
-  // 5'b11001 - JALR
-  wire is_jalr = valid_32b_instr && opcode == 5'b11001 && funct3 == 3'b000;
-
-  // 5'b11011 - JAL
-  wire is_jal = valid_32b_instr && opcode == 5'b11011;
-
-  // 5'b11100 - SYSTEM
-  wire is_system = valid_32b_instr && opcode == 5'b11100;
-
-
-  // Immediate values:
-  // U-type:
-  wire [31:0] i_type_imm = {{20{instr[31]}}, instr[31:20]};
-  wire [31:0] i_type_imm_shift = {{24{1'b0}}, instr[24:20]};
-  wire [31:0] u_type_imm = {instr[31:12], {12{1'b0}}};
-  wire [31:0] j_type_imm = {{12{instr[31]}}, instr[19:12], instr[20], instr[30:21], 1'b0};
-  wire [31:0] s_type_imm = {{20{instr[31]}}, instr[31:25], instr[11:7]};
-  wire [31:0] b_type_imm = {{20{instr[31]}}, instr[7], s_type_imm[10:1], 1'b0};
-
-  // RV32I BASE INSTRUCTION SET
-
-  // LUI (U-type imm)
-  //  (is_lui)
-
-  // AUIPC (U-type imm)
-  //  (is_auipc)
+  // AUIPUC (U-type imm)
+  reg rv32_is_auipc;
 
   // JAL (J-type imm)
-  //  (is_jal)
+  reg rv32_is_jal;
 
   // JALR (I-type imm)
-  //  (is_jalr)
+  reg rv32_is_jalr;
 
   // BRANCH (B-type imm)
-  assign is_beq = is_branch && funct3 == 3'b000;
-  assign is_bne = is_branch && funct3 == 3'b001;
-  assign is_blt = is_branch && funct3 == 3'b100;
-  assign is_bge = is_branch && funct3 == 3'b101;
-  assign is_bltu = is_branch && funct3 == 3'b110;
-  assign is_bgeu = is_branch && funct3 == 3'b111;
+  reg rv32_is_branch;
+  reg rv32_is_beq;
+  reg rv32_is_bne;
+  reg rv32_is_blt;
+  reg rv32_is_bge;
+  reg rv32_is_bltu;
+  reg rv32_is_bgeu;
+
+  // LUI (U-type imm);
+  reg rv32_is_lui;
 
   // LOAD (I-type imm)
-  assign is_lb = is_load && funct3 == 3'b000;
-  assign is_lh = is_load && funct3 == 3'b001;
-  assign is_lw = is_load && funct3 == 3'b010;
-  assign is_lbu = is_load && funct3 == 3'b100;
-  assign is_lhu = is_load && funct3 == 3'b101;
+  reg rv32_is_lb;
+  reg rv32_is_lh;
+  reg rv32_is_lw;
+  reg rv32_is_lbu;
+  reg rv32_is_lhu;
 
   // STORE (S-type imm)
-  assign is_sb = is_store && funct3 == 3'b000;
-  assign is_sh = is_store && funct3 == 3'b001;
-  assign is_sw = is_store && funct3 == 3'b010;
+  reg rv32_is_sb;
+  reg rv32_is_sh;
+  reg rv32_is_sw;
 
   // OP-IMM (I-type imm)
-  assign is_addi = is_op_imm && funct3 == 3'b000;
-  assign is_slti = is_op_imm && funct3 == 3'b010;
-  assign is_stliu = is_op_imm && funct3 == 3'b011;
-  assign is_xori = is_op_imm && funct3 == 3'b100;
-  assign is_ori = is_op_imm && funct3 == 3'b110;
-  assign is_andi = is_op_imm && funct3 == 3'b111;
+  reg rv32_is_addi;
+  reg rv32_is_slti;
+  reg rv32_is_stliu;
+  reg rv32_is_xori;
+  reg rv32_is_ori;
+  reg rv32_is_andi;
 
   // OP-IMM-SHIFT (modified I-type imm)
-  assign is_slli = is_op_imm && funct3 == 3'b001 && funct7 == 7'b0000000;
-  assign is_srli = is_op_imm && funct3 == 3'b101 && funct7 == 7'b0000000;
-  assign is_srai = is_op_imm && funct3 == 3'b101 && funct7 == 7'b0100000;
+  reg rv32_is_slli;
+  reg rv32_is_srli;
+  reg rv32_is_srai;
 
   // OP (no imm)
-  assign is_add = is_op && funct3 == 3'b000 && funct7 == 7'b0000000;
-  assign is_sub = is_op && funct3 == 3'b000 && funct7 == 7'b0100000;
+  reg rv32_is_add;
+  reg rv32_is_sub;
 
-  assign is_sll = is_op && funct3 == 3'b001 && funct7 == 7'b0000000;
-  assign is_slt = is_op && funct3 == 3'b010 && funct7 == 7'b0000000;
-  assign is_sltu = is_op && funct3 == 3'b011 && funct7 == 7'b0000000;
+  reg rv32_is_sll;
+  reg rv32_is_slt;
+  reg rv32_is_sltu;
 
-  assign is_xor = is_op && funct3 == 3'b100 && funct7 == 7'b0000000;
-  assign is_srl = is_op && funct3 == 3'b101 && funct7 == 7'b0000000;
-  assign is_sra = is_op && funct3 == 3'b101 && funct7 == 7'b0100000;
-  assign is_or = is_op && funct3 == 3'b110 && funct7 == 7'b0000000;
-  assign is_and = is_op && funct3 == 3'b111 && funct7 == 7'b0000000;
+  reg rv32_is_xor;
+  reg rv32_is_srl;
+  reg rv32_is_sra;
+  reg rv32_is_or;
+  reg rv32_is_and;
 
   // MISC-MEM
-  assign is_fence = is_misc_mem && (funct3 == 3'b000 || funct3 == 3'b001);
-  assign is_fence_tso = is_misc_mem && funct3 == 3'b000 && rd == 5'b00000 && rs1 == 5'b00000 && instr[31:20] == 12'b100000110011;
-  assign is_sfence_vma = valid_32b_instr && opcode == 5'b11100 && funct3 == 3'b000 && rd == 5'b00000 && funct7 == 7'b0001001;
-  assign is_pause = is_misc_mem && funct3 == 3'b000 && rd == 5'b00000 && rs1 == 5'b00000 && instr[31:20] == 12'b000000010000;
+  reg rv32_is_fence;
+  reg rv32_is_fence_tso;
+  reg rv32_is_sfence_vma;
+  reg rv32_is_pause;
 
   // SYSTEM
-  assign is_ecall = is_system && funct3 == 3'b000 && rd == 5'b00000 && rs1 == 5'b00000 && instr[31:20] == 12'b000000000000;
-  assign is_ebreak = is_system && funct3 == 3'b000 && rd == 5'b00000 && rs1 == 5'b00000 && instr[31:20] == 12'b000000000001;
-  assign is_mret = is_system && funct3 == 3'b000 && rd == 5'b00000 && rs1 == 5'b00000 && rs2 == 5'b00010 && funct7 == 7'b0011000;
-  assign is_sret = is_system && funct3 == 3'b000 && rd == 5'b00000 && rs1 == 5'b00000 && rs2 == 5'b00010 && funct7 == 7'b0001000;
-  assign is_wfi = is_system && funct3 == 3'b000 && rd == 5'b00000 && rs1 == 5'b00000 && rs2 == 5'b00101 && funct7 == 7'b0001000;
+  reg rv32_is_ecall;
+  reg rv32_is_ebreak;
+  reg rv32_is_mret;
+  reg rv32_is_sret;
+  reg rv32_is_wfi;
 
   // CSR
-  assign is_csrrw = is_system && funct3 == 3'b001;
-  assign is_csrrs = is_system && funct3 == 3'b010;
-  assign is_csrrc = is_system && funct3 == 3'b011;
-  assign is_csrrwi = is_system && funct3 == 3'b101;
-  assign is_csrrsi = is_system && funct3 == 3'b110;
-  assign is_csrrci = is_system && funct3 == 3'b111;
+  reg rv32_is_csrrw;
+  reg rv32_is_csrrs;
+  reg rv32_is_csrrc;
+  reg rv32_is_csrrwi;
+  reg rv32_is_csrrsi;
+  reg rv32_is_csrrci;
+
+  reg rv32_is_load;
+  reg rv32_is_store;
 
 
-  // IMMEDIATE selection
 
-  // LUI (U-type imm)
-  // AUIPC (U-type imm)
-  wire sel_u_type_imm = is_lui || is_auipc;
+  // Compressed instructions
+  // -----------------------
+  reg rvc_valid;
+  reg rvc_dec_err;
+  reg [4:0] rvc_rd;
+  reg [4:0] rvc_rs1;
+  reg [4:0] rvc_rs2;
+  reg [31:0] rvc_imm;
+  reg rvc_wr_valid;
+
+  reg rvc_is_nop;
+  reg rvc_is_c_addi4spn;
+  reg rvc_is_c_lw;
+  reg rvc_is_c_sw;
+
+  reg rvc_is_c_addi;
+  reg rvc_is_c_jal;
+  reg rvc_is_c_li;
+  reg rvc_is_c_addi16sp;
+  reg rvc_is_c_lui;
+  reg rvc_is_c_srli;
+  reg rvc_is_c_srai;
+  reg rvc_is_c_andi;
+  reg rvc_is_c_sub;
+  reg rvc_is_c_xor;
+  reg rvc_is_c_or;
+  reg rvc_is_c_and;
+  reg rvc_is_c_j;
+  reg rvc_is_c_beqz;
+  reg rvc_is_c_bnez;
+
+  reg rvc_is_c_slli;
+  reg rvc_is_c_lwsp;
+  reg rvc_is_c_jr;
+  reg rvc_is_c_mv;
+  reg rvc_is_c_ebreak;
+  reg rvc_is_c_jalr;
+  reg rvc_is_c_add;
+  reg rvc_is_c_swsp;
+
+
+  rv32i_instr_decode i_rv32i_decode (
+      .instr(instr),
+      .dec_err(rv32_dec_err),
+      .rd(rv32_rd),
+      .rs1(rv32_rs1),
+      .rs2(rv32_rs2),
+      .imm(rv32_imm),
+      .wr_valid(rv32_wr_valid),
+
+      // AUIPUC (U-type imm)
+      .is_auipc(rv32_is_auipc),
+
+      // JAL (J-type imm)
+      .is_jal(rv32_is_jal),
+
+      // JALR (I-type imm)
+      .is_jalr(rv32_is_jalr),
+
+      // BRANCH (B-type imm)
+      .is_branch(rv32_is_branch),
+      .is_beq(rv32_is_beq),
+      .is_bne(rv32_is_bne),
+      .is_blt(rv32_is_blt),
+      .is_bge(rv32_is_bge),
+      .is_bltu(rv32_is_bltu),
+      .is_bgeu(rv32_is_bgeu),
+
+      // LUI (U-type imm);
+      .is_lui(rv32_is_lui),
+
+      // LOAD (I-type imm)
+      .is_lb (rv32_is_lb),
+      .is_lh (rv32_is_lh),
+      .is_lw (rv32_is_lw),
+      .is_lbu(rv32_is_lbu),
+      .is_lhu(rv32_is_lhu),
+
+      // STORE (S-type imm)
+      .is_sb(rv32_is_sb),
+      .is_sh(rv32_is_sh),
+      .is_sw(rv32_is_sw),
+
+      // OP-IMM (I-type imm)
+      .is_addi (rv32_is_addi),
+      .is_slti (rv32_is_slti),
+      .is_stliu(rv32_is_stliu),
+      .is_xori (rv32_is_xori),
+      .is_ori  (rv32_is_ori),
+      .is_andi (rv32_is_andi),
+
+      // OP-IMM-SHIFT (modified I-type imm)
+      .is_slli(rv32_is_slli),
+      .is_srli(rv32_is_srli),
+      .is_srai(rv32_is_srai),
+
+      // OP (no imm)
+      .is_add(rv32_is_add),
+      .is_sub(rv32_is_sub),
+
+      .is_sll (rv32_is_sll),
+      .is_slt (rv32_is_slt),
+      .is_sltu(rv32_is_sltu),
+
+      .is_xor(rv32_is_xor),
+      .is_srl(rv32_is_srl),
+      .is_sra(rv32_is_sra),
+      .is_or (rv32_is_or),
+      .is_and(rv32_is_and),
+
+      // MISC-MEM
+      .is_fence(rv32_is_fence),
+      .is_fence_tso(rv32_is_fence_tso),
+      .is_sfence_vma(rv32_is_sfence_vma),
+      .is_pause(rv32_is_pause),
+
+      // SYSTEM
+      .is_ecall(rv32_is_ecall),
+      .is_ebreak(rv32_is_ebreak),
+      .is_mret(rv32_is_mret),
+      .is_sret(rv32_is_sret),
+      .is_wfi(rv32_is_wfi),
+
+      // CSR
+      .is_csrrw (rv32_is_csrrw),
+      .is_csrrs (rv32_is_csrrs),
+      .is_csrrc (rv32_is_csrrc),
+      .is_csrrwi(rv32_is_csrrwi),
+      .is_csrrsi(rv32_is_csrrsi),
+      .is_csrrci(rv32_is_csrrci),
+
+      .is_load (rv32_is_load),
+      .is_store(rv32_is_store),
+      .is_amo  (is_amo)
+  );
+
+
+  rvc32_instr_decode i_rvc32_decode (
+      .instr(instr),
+      .valid_rvc(rvc_valid),
+      .dec_err(rvc_dec_err),
+      .rd(rvc_rd),
+      .rs1(rvc_rs1),
+      .rs2(rvc_rs2),
+      .imm(rvc_imm),
+      .wr_valid(rvc_wr_valid),
+
+      .is_nop(rvc_is_nop),
+      .is_c_addi4spn(rvc_is_c_addi4spn),
+      .is_c_lw(rvc_is_c_lw),
+      .is_c_sw(rvc_is_c_sw),
+
+      .is_c_addi(rvc_is_c_addi),
+      .is_c_jal(rvc_is_c_jal),
+      .is_c_li(rvc_is_c_li),
+      .is_c_addi16sp(rvc_is_c_addi16sp),
+      .is_c_lui(rvc_is_c_lui),
+      .is_c_srli(rvc_is_c_srli),
+      .is_c_srai(rvc_is_c_srai),
+      .is_c_andi(rvc_is_c_andi),
+      .is_c_sub(rvc_is_c_sub),
+      .is_c_xor(rvc_is_c_xor),
+      .is_c_or(rvc_is_c_or),
+      .is_c_and(rvc_is_c_and),
+      .is_c_j(rvc_is_c_j),
+      .is_c_beqz(rvc_is_c_beqz),
+      .is_c_bnez(rvc_is_c_bnez),
+
+      .is_c_slli(rvc_is_c_slli),
+      .is_c_lwsp(rvc_is_c_lwsp),
+      .is_c_jr(rvc_is_c_jr),
+      .is_c_mv(rvc_is_c_mv),
+      .is_c_ebreak(rvc_is_c_ebreak),
+      .is_c_jalr(rvc_is_c_jalr),
+      .is_c_add(rvc_is_c_add),
+      .is_c_swsp(rvc_is_c_swsp)
+  );
+
+  assign dec_err = i_rv32i_decode.valid_32b_instr ? rv32_dec_err : rvc_dec_err;
+  assign rd = i_rv32i_decode.valid_32b_instr ? rv32_rd : rvc_rd;
+  assign rs1 = i_rv32i_decode.valid_32b_instr ? rv32_rs1 : rvc_rs1;
+  assign rs2 = i_rv32i_decode.valid_32b_instr ? rv32_rs2 : rvc_rs2;
+  assign imm = i_rv32i_decode.valid_32b_instr ? rv32_imm : rvc_imm;
+  assign wr_valid = i_rv32i_decode.valid_32b_instr ? rv32_wr_valid : rvc_wr_valid;
+
+  // AUIPUC (U-type imm)
+  assign is_auipc = rv32_is_auipc;
 
   // JAL (J-type imm)
-  wire sel_j_type_imm = is_jal;
-
-  // BRANCH (B-type imm)
-  wire sel_b_type_imm = is_branch;
-
-  // OP-IMM-SHIFT (modified I-type imm)
-  wire sel_modified_i_type_imm = is_slli || is_srli || is_srai;
+  assign is_jal = i_rv32i_decode.valid_32b_instr ? rv32_is_jal : (rvc_is_c_jal || rvc_is_c_j);
 
   // JALR (I-type imm)
+  assign is_jalr = i_rv32i_decode.valid_32b_instr ? rv32_is_jalr : (rvc_is_c_jalr || rvc_is_c_jr);
+
+  // BRANCH (B-type imm)
+  assign is_branch = rv32_is_branch;
+  assign is_beq = i_rv32i_decode.valid_32b_instr ? rv32_is_beq : rvc_is_c_beqz;
+  assign is_bne = i_rv32i_decode.valid_32b_instr ? rv32_is_bne : rvc_is_c_bnez;
+  assign is_blt = rv32_is_blt;
+  assign is_bge = rv32_is_bge;
+  assign is_bltu = rv32_is_bltu;
+  assign is_bgeu = rv32_is_bgeu;
+
+  // LUI (U-type imm);
+  assign is_lui = i_rv32i_decode.valid_32b_instr ? rv32_is_lui : rvc_is_c_lui;
+
   // LOAD (I-type imm)
-  wire sel_i_type_imm = is_load || is_jalr || (~sel_modified_i_type_imm && is_op_imm) || is_system;
+  assign is_lb = rv32_is_lb;
+  assign is_lh = rv32_is_lh;
+  assign is_lw = i_rv32i_decode.valid_32b_instr ? rv32_is_lw : (rvc_is_c_lw || rvc_is_c_lwsp);
+  assign is_lbu = rv32_is_lbu;
+  assign is_lhu = rv32_is_lhu;
 
   // STORE (S-type imm)
-  wire sel_s_type_imm = is_store;
+  assign is_sb = rv32_is_sb;
+  assign is_sh = rv32_is_sh;
+  assign is_sw = i_rv32i_decode.valid_32b_instr ? rv32_is_sw : (rvc_is_c_sw || rvc_is_c_swsp);
 
-  assign imm = sel_u_type_imm ? u_type_imm :
-               sel_j_type_imm ? j_type_imm :
-               sel_b_type_imm ? b_type_imm :
-               sel_modified_i_type_imm ? i_type_imm_shift :
-               sel_i_type_imm ? i_type_imm :
-               sel_s_type_imm ? s_type_imm : {32{1'bx}};
+  // OP-IMM (I-type imm)
+  assign is_addi = i_rv32i_decode.valid_32b_instr ? rv32_is_addi : (rvc_is_c_li  || rvc_is_c_addi || rvc_is_c_addi4spn || rvc_is_c_addi16sp);
+  assign is_slti = rv32_is_slti;
+  assign is_stliu = rv32_is_stliu;
+  assign is_xori = rv32_is_xori;
+  assign is_ori = rv32_is_ori;
+  assign is_andi = i_rv32i_decode.valid_32b_instr ? rv32_is_andi : rvc_is_c_andi;
 
-  assign wr_valid = is_lui || is_auipc || is_jal || is_jalr || is_load || is_op_imm || is_op ||
-                  is_csrrw || is_csrrwi || is_csrrs || is_csrrsi || is_csrrc || is_csrrci;
+  // OP-IMM-SHIFT (modified I-type imm)
+  assign is_slli = i_rv32i_decode.valid_32b_instr ? rv32_is_slli : rvc_is_c_slli;
+  assign is_srli = i_rv32i_decode.valid_32b_instr ? rv32_is_srli : rvc_is_c_srli;
+  assign is_srai = i_rv32i_decode.valid_32b_instr ? rv32_is_srai : rvc_is_c_srai;
 
-  assign dec_err = instr[1:0] != 2'b11 || ~(
-    is_auipc ||
-    is_jal ||
-    is_jalr ||
-    is_branch ||
-    is_beq ||
-    is_bne ||
-    is_blt ||
-    is_bge ||
-    is_bltu ||
-    is_bgeu ||
-    is_lui ||
-    is_lb ||
-    is_lh ||
-    is_lw ||
-    is_lbu ||
-    is_lhu ||
-    is_sb ||
-    is_sh ||
-    is_sw ||
-    is_addi ||
-    is_slti ||
-    is_stliu ||
-    is_xori ||
-    is_ori ||
-    is_andi ||
-    is_slli ||
-    is_srli ||
-    is_srai ||
-    is_add ||
-    is_sub ||
-    is_sll ||
-    is_slt ||
-    is_sltu ||
-    is_xor ||
-    is_srl ||
-    is_sra ||
-    is_or ||
-    is_and ||
-    is_fence ||
-    is_fence_tso ||
-    is_sfence_vma ||
-    is_pause ||
-    is_ecall ||
-    is_ebreak ||
-    is_mret ||
-    is_sret ||
-    is_wfi ||
-    is_csrrw ||
-    is_csrrs ||
-    is_csrrc ||
-    is_csrrwi ||
-    is_csrrsi ||
-    is_csrrci );
+  // OP (no imm)
+  assign is_add = i_rv32i_decode.valid_32b_instr ? rv32_is_add : (rvc_is_c_add || rvc_is_c_mv);
+  assign is_sub = i_rv32i_decode.valid_32b_instr ? rv32_is_sub : rvc_is_c_sub;
 
-endmodule  // instr_decode
+  assign is_sll = rv32_is_sll;
+  assign is_slt = rv32_is_slt;
+  assign is_sltu = rv32_is_sltu;
+
+  assign is_xor = i_rv32i_decode.valid_32b_instr ? rv32_is_xor : rvc_is_c_xor;
+  assign is_srl = rv32_is_srl;
+  assign is_sra = rv32_is_sra;
+  assign is_or = i_rv32i_decode.valid_32b_instr ? rv32_is_or : rvc_is_c_or;
+  assign is_and = i_rv32i_decode.valid_32b_instr ? rv32_is_and : rvc_is_c_and;
+
+  // MISC-MEM
+  assign is_fence = rv32_is_fence;
+  assign is_fence_tso = rv32_is_fence_tso;
+  assign is_sfence_vma = rv32_is_sfence_vma;
+  assign is_pause = rv32_is_pause;
+
+  // SYSTEM
+  assign is_ecall = rv32_is_ecall;
+  assign is_ebreak = i_rv32i_decode.valid_32b_instr ? rv32_is_ebreak : rvc_is_c_ebreak;
+  assign is_mret = rv32_is_mret;
+  assign is_sret = rv32_is_sret;
+  assign is_wfi = rv32_is_wfi;
+
+  // CSR
+  assign is_csrrw = rv32_is_csrrw;
+  assign is_csrrs = rv32_is_csrrs;
+  assign is_csrrc = rv32_is_csrrc;
+  assign is_csrrwi = rv32_is_csrrwi;
+  assign is_csrrsi = rv32_is_csrrsi;
+  assign is_csrrci = rv32_is_csrrci;
+
+  assign is_load = rv32_is_load || rvc_is_c_lw || rvc_is_c_lwsp;
+  assign is_store = rv32_is_store || rvc_is_c_sw || rvc_is_c_swsp;
+
+endmodule

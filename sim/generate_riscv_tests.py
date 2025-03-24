@@ -20,7 +20,6 @@ exclude_test_patterns = [
     "-lrsc",
     "rv64",
     "rv32si-p-dirty",
-    "rv32si-p-ma_fetch",
 ]
 
 include_test_patterns = ["rv32ui", "rv32mi", "rv32si"]

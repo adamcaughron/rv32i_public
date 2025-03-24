@@ -44,8 +44,8 @@ module rv32i_dii(input rvfi_ext_enable, input rvfi_dii_enable, input halt);
 
    bit [31:0] dii_instr;
 
-   wire [31:0] rs1_val = ~rv32i_core.i_instr_decode.is_op_imm ? rv32i_core.rs1_val : 32'b0;
-   wire [5:0] rs1 = ~rv32i_core.i_instr_decode.is_op_imm ? (rv32i_core.rs1 & {5{~rv32i_core.i_instr_decode.sel_u_type_imm}}) : 32'b0;
+   wire [31:0] rs1_val = 0; //~rv32i_core.i_instr_decode.is_op_imm ? rv32i_core.rs1_val : 32'b0;
+   wire [5:0] rs1 = 0; //~rv32i_core.i_instr_decode.is_op_imm ? (rv32i_core.rs1 & {5{~rv32i_core.i_instr_decode.sel_u_type_imm}}) : 32'b0;
 
    always @(posedge rv32i_core.clk) begin
        if (rvfi_ext_enable && ~halt) begin
@@ -54,10 +54,10 @@ module rv32i_dii(input rvfi_ext_enable, input rvfi_dii_enable, input halt);
                 rvfi_order++;
 
               rvfi_set_pc_data(rv32i_core.pc, rv32i_core.nxt_pc_w_trap);
-              rvfi_set_inst_meta_data(rv32i_core.instr, rv32i_core.instr_trap || (rv32i_core.machine_interrupt && ~((rv32i_core.is_wfi || rv32i_core.wfi_pending) && ~rv32i_core.wfi_clear)), 0, rv32i_core.machine_interrupt, rv32i_core.i_zicsr.priv_mode, 1, ~rv32i_core.dec_err & 1'b1);
+              rvfi_set_inst_meta_data(rv32i_core.instr & {{16{~rv32i_core.i_instr_decode.rvc_valid}}, {16{1'b1}}}, rv32i_core.instr_trap || (rv32i_core.machine_interrupt && ~((rv32i_core.is_wfi || rv32i_core.wfi_pending) && ~rv32i_core.wfi_clear)), 0, rv32i_core.machine_interrupt, rv32i_core.i_zicsr.priv_mode, 1, ~rv32i_core.dec_err & 1'b1);
 
               if (integer_data_available)
-                  rvfi_set_ext_integer_data(rv32i_core.rd_val, rs1_val, (rv32i_core.rs2_val & {32{~rv32i_core.i_instr_decode.is_op_imm}}), rv32i_core.rd, rs1 , (rv32i_core.rs2 & {5{~(rv32i_core.i_instr_decode.sel_u_type_imm || rv32i_core.i_instr_decode.sel_i_type_imm || rv32i_core.i_instr_decode.sel_modified_i_type_imm)}}));
+                  rvfi_set_ext_integer_data(rv32i_core.rd_val, rs1_val, 0, rv32i_core.rd, rs1 , 0);
 
               if (memory_access_data_available)
                   rvfi_set_ext_mem_data({rv32i_core.ld_data, 32'b0, 32'b0, 32'b0}, {rv32i_core.rs2_val, 32'b0, 32'b0, 32'b0}, mem_rmask, mem_wmask, rv32i_core.alu_output);
@@ -79,19 +79,7 @@ module rv32i_dii(input rvfi_ext_enable, input rvfi_dii_enable, input halt);
        end
    end
 
-   assign integer_data_available = ~rv32i_core.instr_trap && (rv32i_core.rd!=0) && (rv32i_core.i_instr_decode.is_op_imm ||
-                                                                                    rv32i_core.i_instr_decode.is_op ||
-                                                                                    rv32i_core.i_instr_decode.is_lui ||
-                                                                                    rv32i_core.i_instr_decode.is_jalr ||
-                                                                                    rv32i_core.i_instr_decode.is_jal ||
-                                                                                    rv32i_core.i_instr_decode.is_auipc ||
-                                                                                    rv32i_core.i_instr_decode.is_load ||
-                                                                                    rv32i_core.i_instr_decode.is_csrrw ||
-                                                                                    rv32i_core.i_instr_decode.is_csrrwi ||
-                                                                                    rv32i_core.i_instr_decode.is_csrrs ||
-                                                                                    rv32i_core.i_instr_decode.is_csrrsi ||
-                                                                                    rv32i_core.i_instr_decode.is_csrrc ||
-                                                                                    rv32i_core.i_instr_decode.is_csrrci);
+   assign integer_data_available = ~rv32i_core.instr_trap && (rv32i_core.rd!=0) && (rv32i_core.wr_valid);
 
    assign memory_access_data_available = (~rv32i_core.instr_trap || rv32i_core.trap_st_amo_access_fault) && (rv32i_core.i_instr_decode.is_store || rv32i_core.i_instr_decode.is_load);
 

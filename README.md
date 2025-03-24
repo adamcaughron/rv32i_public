@@ -11,6 +11,7 @@ The core currently supports the following features:
 - Partial support for RISCV privileged architecture
   - Machine ISA, v1.13, partial support
   - Supervisor ISA, v1.13, partial support
+- "C" extension for compressed instructions, v2.0
 
 The testbench supports the following modes of operation:
 - Execution of elf files via conversion to backdoor-loadable initialization files
@@ -21,7 +22,7 @@ Verification status:
 - Many of the self-checking tests from the [sail-riscv](https://github.com/riscv/sail-riscv/tree/master/test/riscv-tests) repo are passing:
   - All 39 `"rv32ui-p-*"` tests are passing
   - All 9 `"rv32mi-p-*"` tests are passing
-  - 4 out of 6 `"rv32si-p-*"` tests are passing. (`rv32si-p-dirty` and `rv32si-p-ma_fetch` are yet to pass.)
+  - 5 out of 6 `"rv32si-p-*"` tests are passing. (`rv32si-p-dirty` is yet to pass.)
 - Tens of thousands of random instruction streams match against the `sail-riscv` reference model via testing with `TestRIG` and `QCVengine` generator
 
 Getting Started

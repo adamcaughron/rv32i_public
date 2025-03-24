@@ -24,9 +24,9 @@ wire supervisor_interrupt;
 wire medelegated;
 
 wire dec_err;
-wire [5:0] rd;
-wire [5:0] rs1;
-wire [5:0] rs2;
+wire [4:0] rd;
+wire [4:0] rs1;
+wire [4:0] rs2;
 wire [31:0] imm;
 wire [31:0] rs1_val;
 wire [31:0] rs2_val;
@@ -125,7 +125,7 @@ always @(posedge clk or negedge rst_n)
 
 
 // NEXT PC COMPUTATION
-assign nxt_seq_pc = pc + 3'b100;
+assign nxt_seq_pc = i_instr_decode.rvc_valid ? pc + 3'b010 : pc + 3'b100;
 wire [31:0] jalr_target = {({1'b0, rs1_val} + $signed(imm))}[31:0];
 assign nxt_pc = {
         // this would be later in pipelined operation:
@@ -146,7 +146,17 @@ assign nxt_pc_w_trap = instr_trap        ? ( !medelegated ? {i_zicsr.mtvec[31:2]
 
 
 // INSTRUCTION FETCH
-assign instr = mem[pc[30:0]>>2];
+wire [31:2] pc_b0_index = (pc[30:0] >> 2);
+wire [31:2] pc_b1_index = ((pc[30:0] & 2'b11) == 2'b11) ? (pc[30:0] >> 2) + 1 : (pc[30:0] >> 2);
+wire [31:2] pc_b2_index = ((pc[30:0] & 2'b10) == 2'b10) ? (pc[30:0] >> 2) + 1 : (pc[30:0] >> 2);
+wire [31:2] pc_b3_index = ((pc[30:0] & 2'b11) != 2'b00) ? (pc[30:0] >> 2) + 1 : (pc[30:0] >> 2);
+
+wire [1:0] pc_b0_offset = pc[1:0];
+wire [1:0] pc_b1_offset = pc_b0_offset + 1;
+wire [1:0] pc_b2_offset = pc_b1_offset + 1;
+wire [1:0] pc_b3_offset = pc_b2_offset + 1;
+
+assign instr = {mem[pc_b3_index][pc_b3_offset], mem[pc_b2_index][pc_b2_offset], mem[pc_b1_index][pc_b1_offset], mem[pc_b0_index][pc_b0_offset]};
 
 
 // INSTRUCTION DECODE
@@ -339,7 +349,7 @@ wire addr_oob = (alu_output < $unsigned(32'h8000_0000)) || ($unsigned(alu_output
 // 0 - Instruction address misaligned - Exception is reported on the branch
 // or link instruction that targets an address which is not IALIGN-bit aligned
 // (32 bit here)
-wire trap_instr_addr_misaligned = (is_branch || is_jal || is_jalr) && (|nxt_pc[1:0]);
+wire trap_instr_addr_misaligned = (is_branch || is_jal || is_jalr) && (nxt_pc[0]);
 
 // 1 - Instruction access fault -- would require implementing Physical Memory Protection CSRs
 
